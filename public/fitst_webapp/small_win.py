@@ -29,7 +29,7 @@ class SmallGoalApp:
             print("ข้อผิดพลาด: ชื่อเป้าหมายไม่สามารถเว้นว่างได้")
             return
 
-        goal_id = str(uuid.uuid4()) # สร้าง ID ที่ไม่ซ้ำกันสำหรับแต่ละเป้าหมาย
+        goal_id = str(uuid.uuid4())
         new_goal = {
             'name': goal_name.strip(),
             'status': 'incomplete'
@@ -57,7 +57,6 @@ class SmallGoalApp:
             print("ข้อผิดพลาด: หมายเลขเป้าหมายไม่ถูกต้อง")
             return
         
-        # แปลง index ให้เป็น key ของ dictionary
         target_id = list(self.goals.keys())[goal_index - 1]
         self.goals[target_id]['status'] = 'complete'
         print(f"เป้าหมาย '{self.goals[target_id]['name']}' สำเร็จแล้ว!")
