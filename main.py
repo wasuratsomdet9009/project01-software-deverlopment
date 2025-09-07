@@ -469,3 +469,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+print("V.1.0")
