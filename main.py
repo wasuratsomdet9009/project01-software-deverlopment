@@ -1,15 +1,10 @@
-# Split Bill — All‑in‑One (Tkinter + Firebase)
+# split_bill_all_in_one.py
 # ------------------------------------------------------------
 # ไฟล์เดียวจบ: Logic คำนวณ + Tkinter UI + Firebase (Auth + RTDB Streaming/Polling)
-# ✔ แชร์ข้อมูลบิลแบบเรียลไทม์กับเพื่อนที่ใช้แอปร่วมกัน
-# ✔ Login ด้วย Email/Password (Firebase Authentication)
-# ✔ เก็บ/อ่านใน Firebase Realtime Database (ผ่าน REST)
-# ✔ ถ้าไม่มี sseclient จะ fallback เป็น Polling อัตโนมัติ
-#
-# การเตรียมใช้งาน:
-# 1) pip install -U requests sseclient-py
-# 2) ตั้งค่า FIREBASE_API_KEY และ FIREBASE_RTDB_URL ด้านล่าง
-# 3) รัน: python "Split Bill — All‑in‑One (Tkinter + Firebase).py"
+# ✔ แชร์ข้อมูลบิลแบบเรียลไทม์ (SSE) พร้อมโพลลิ่งสำรอง
+# ✔ อัปเดต UI ผ่านเมนเธรด (Tkinter-safe)
+# ✔ กันลูปสะท้อน + เทียบ updatedAt
+# ✔ รีเฟรชโทเคนอัตโนมัติ
 # ------------------------------------------------------------
 
 from dataclasses import dataclass, field
@@ -23,7 +18,7 @@ import requests
 try:
     from sseclient import SSEClient  # type: ignore
 except Exception:
-    SSEClient = None  # fallback ไป polling
+    SSEClient = None  # ไม่มีไลบรารี ก็จะใช้ polling แทน
 
 # =====================
 # Firebase Config — แก้ค่านี้ให้เป็นของโปรเจกต์คุณ
@@ -235,6 +230,31 @@ class FirebaseRTClient:
         self.local_uid = data["localId"]
         return data
 
+    # ---------- Token refresh ----------
+    def refresh_id_token(self):
+        if not self.refresh_token:
+            return
+        url = f"https://securetoken.googleapis.com/v1/token?key={self.api_key}"
+        res = requests.post(url, data={
+            "grant_type": "refresh_token",
+            "refresh_token": self.refresh_token
+        })
+        res.raise_for_status()
+        d = res.json()
+        self.id_token = d["id_token"]
+        self.refresh_token = d["refresh_token"]
+        self.local_uid = d["user_id"]
+
+    def start_auto_refresh(self, every_sec=50*60):
+        def loop():
+            while True:
+                time.sleep(every_sec)
+                try:
+                    self.refresh_id_token()
+                except Exception:
+                    pass
+        threading.Thread(target=loop, daemon=True).start()
+
     # ---------- RTDB REST ----------
     def _auth_params(self):
         if not self.id_token:
@@ -259,18 +279,29 @@ class FirebaseRTClient:
         res.raise_for_status()
         return res.json()
 
+    def post(self, path: str, obj):
+        url = f"{self.rtdb_url}/{path}.json"
+        res = requests.post(url, params=self._auth_params(), json=obj, timeout=30)
+        res.raise_for_status()
+        return res.json()
+
+    def delete(self, path: str):
+        url = f"{self.rtdb_url}/{path}.json"
+        res = requests.delete(url, params=self._auth_params(), timeout=30)
+        res.raise_for_status()
+        return res.json()
+
     # ---------- Streaming (SSE or Polling) ----------
     def stream(self, path: str, on_event):
         if not self.id_token:
             raise RuntimeError("Not authenticated")
         url = f"{self.rtdb_url}/{path}.json"
-        params = {"auth": self.id_token}
         self._stop_stream = False
 
         def run_sse():
             while not self._stop_stream:
                 try:
-                    messages = SSEClient(url, params=params)
+                    messages = SSEClient(url, params={"auth": self.id_token})
                     for msg in messages:
                         if self._stop_stream:
                             break
@@ -281,20 +312,24 @@ class FirebaseRTClient:
                             except Exception:
                                 pass
                 except Exception:
+                    # ต่อโทเคนเผื่อหมดอายุ แล้วลองใหม่
+                    try: self.refresh_id_token()
+                    except: pass
                     time.sleep(2)
 
         def run_poll():
             last = None
             while not self._stop_stream:
                 try:
-                    data = requests.get(url, params=params, timeout=30).json()
+                    data = requests.get(url, params={"auth": self.id_token}, timeout=30).json()
                     if data is not None:
                         ua = data.get("updatedAt") if isinstance(data, dict) else None
                         if last != ua:
                             on_event({"path": "/", "data": data})
                             last = ua
                 except Exception:
-                    pass
+                    try: self.refresh_id_token()
+                    except: pass
                 time.sleep(3)
 
         def runner():
@@ -322,7 +357,8 @@ class BillSplitApp(ttk.Frame):
         self.bill = Bill()
         self.fb: Optional[FirebaseRTClient] = None
         self.room_id: Optional[str] = None
-        self._local_change = False
+        self._local_change = False  # กันอีเวนต์สะท้อนกลับ
+        self._last_remote_ua = None  # เก็บ timestamp ล่าสุดจาก cloud
 
         self._build_layout()
 
@@ -459,48 +495,70 @@ class BillSplitApp(ttk.Frame):
             messagebox.showerror("Firebase", f"ล็อกอินไม่สำเร็จ: {e}")
             self.fb = None
             return
+
+        self.fb.start_auto_refresh()  # ต่ออายุโทเคนอัตโนมัติ
+
         room = simpledialog.askstring("เข้าร่วมห้อง", "Room ID (เช่น classA-2025):", parent=self)
         if not room:
             messagebox.showwarning("แจ้ง", "ต้องใส่ Room ID")
             return
         self.room_id = room.strip()
+
         try:
-            # ลงทะเบียนเป็นสมาชิกห้อง
+            # ลงทะเบียนเป็นสมาชิกห้อง (ให้ผ่าน rules)
             self.fb.patch(f"rooms/{self.room_id}/members/{self.fb.local_uid}", {"joinedAt": int(time.time())})
             # โหลดข้อมูลบิลล่าสุด
             data = self.fb.get(f"bills/{self.room_id}")
             if data:
                 self.bill = Bill.from_dict(data)
                 self._render_all_from_bill()
+                if isinstance(data, dict):
+                    self._last_remote_ua = data.get("updatedAt")
         except Exception:
             pass
-        # subscribe real-time
+
+        # subscribe real-time (ดึงสแนปช็อตเต็มทุกครั้ง)
         def on_event(ev):
-            if not ev or "data" not in ev: return
-            if self._local_change:  # กันสะท้อน
+            if self._local_change:
                 return
-            data = ev["data"]
-            if data is None: return
             try:
-                new_bill = Bill.from_dict(data if isinstance(data, dict) else self.fb.get(f"bills/{self.room_id}"))
+                full = self.fb.get(f"bills/{self.room_id}")
+                if not isinstance(full, dict):
+                    return
+                ua = full.get("updatedAt")
+                if ua is not None and ua == self._last_remote_ua:
+                    return
+                new_bill = Bill.from_dict(full)
+            except Exception:
+                return
+
+            def apply():
+                self._last_remote_ua = ua
                 self.bill = new_bill
                 self._render_all_from_bill()
-            except Exception:
-                pass
+            self.after(0, apply)
+
         try:
             self.fb.stream(f"bills/{self.room_id}", on_event)
             self.cloud_lbl.config(text=f"สถานะ: online (room {self.room_id})")
-        except Exception as e:
+        except Exception:
             self.cloud_lbl.config(text=f"สถานะ: online (poll)")
+
+        # watchdog โพลลิ่งสำรอง
+        self.after(3000, self._keep_synced)
 
     def _push_bill(self):
         if not (self.fb and self.room_id):
             return
         try:
             self._local_change = True
-            self.fb.put(f"bills/{self.room_id}", self.bill.to_dict())
+            data = self.bill.to_dict()
+            data["lastEditBy"] = self.fb.local_uid
+            self.fb.put(f"bills/{self.room_id}", data)
+            # เก็บ timestamp ไว้เทียบกับ cloud
+            self._last_remote_ua = data["updatedAt"]
         finally:
-            # หน่วงสั้น ๆ กัน loop สะท้อนกลับ
+            # กันรับอีเวนต์สะท้อนกลับทันทีหลัง push
             self.after(300, lambda: setattr(self, "_local_change", False))
 
     def _render_all_from_bill(self):
@@ -515,6 +573,21 @@ class BillSplitApp(ttk.Frame):
         for it in self.bill.items:
             self.table.insert("", tk.END, values=(f"{it.price:,.2f}", it.payer, ", ".join(it.participants), "Yes" if it.weights else "No"))
         self.refresh_summary()
+
+    def _keep_synced(self):
+        # ตรวจทุก 3 วิ เผื่อสตรีมเงียบ/หลุด จะดึงสแนปช็อตเอง
+        if self.fb and self.room_id and not self._local_change:
+            try:
+                full = self.fb.get(f"bills/{self.room_id}")
+                if isinstance(full, dict):
+                    ua = full.get("updatedAt")
+                    if ua is not None and ua != self._last_remote_ua:
+                        self._last_remote_ua = ua
+                        self.bill = Bill.from_dict(full)
+                        self._render_all_from_bill()
+            except Exception:
+                pass
+        self.after(3000, self._keep_synced)
 
     # ---------- Local Save/Load/Copy/Export ----------
     def copy_summary(self):
@@ -719,7 +792,7 @@ class BillSplitApp(ttk.Frame):
 def main():
     root = tk.Tk()
     try:
-        root.call("source", "azure.tcl")
+        root.call("source", "azure.tcl")  # ถ้ามีธีม Azure จะสวยขึ้น
         ttk.Style().theme_use("azure")
     except Exception:
         pass
