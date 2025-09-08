@@ -5,6 +5,7 @@
 # ✔ อัปเดต UI ผ่านเมนเธรด (Tkinter-safe)
 # ✔ กันลูปสะท้อน + เทียบ updatedAt
 # ✔ รีเฟรชโทเคนอัตโนมัติ
+# ✔ ตารางละเอียด: คอลัมน์เพิ่ม + แถวลูกแจกแจงต่อคน + sort หัวคอลัมน์ + zebra
 # ------------------------------------------------------------
 
 from dataclasses import dataclass, field
@@ -435,15 +436,38 @@ class BillSplitApp(ttk.Frame):
 
         # --- Items Table ---
         ttk.Label(right, text="รายการทั้งหมด", font=("Segoe UI", 11, "bold")).grid(row=0, column=0, sticky="w")
-        self.table = ttk.Treeview(right, columns=("price", "payer", "participants", "weights"), show="headings", height=12)
-        self.table.heading("price", text="ราคา")
-        self.table.heading("payer", text="ผู้จ่าย")
-        self.table.heading("participants", text="ผู้ร่วมกิน")
-        self.table.heading("weights", text="weights?")
-        self.table.column("price", width=80, anchor="e")
-        self.table.column("payer", width=100)
-        self.table.column("participants", width=340)
-        self.table.column("weights", width=100, anchor="center")
+
+        self.table_cols = ("idx", "name", "price", "payer", "count", "participants", "mode", "per_head", "weights")
+        self.table = ttk.Treeview(
+            right, columns=self.table_cols, show="headings", height=12, selectmode="browse"
+        )
+
+        # ตั้งหัวคอลัมน์ + กดเพื่อ sort
+        headings = {
+            "idx": "#", "name": "เมนู", "price": "ราคา (บาท)", "payer": "ผู้จ่าย",
+            "count": "คนร่วม", "participants": "รายชื่อผู้ร่วมกิน",
+            "mode": "โหมดหาร", "per_head": "ต่อหัว/เมนู (บาท)", "weights": "น้ำหนัก"
+        }
+        widths = {
+            "idx": 40, "name": 200, "price": 110, "payer": 110, "count": 65,
+            "participants": 300, "mode": 90, "per_head": 130, "weights": 160
+        }
+        anchors = {
+            "idx": "e", "name": "w", "price": "e", "payer": "w", "count": "e",
+            "participants": "w", "mode": "center", "per_head": "e", "weights": "w"
+        }
+        for k in self.table_cols:
+            self.table.heading(k, text=headings[k], command=lambda c=k: self._sort_by(c))
+            self.table.column(k, width=widths[k], anchor=anchors[k], stretch=False)
+
+        # สไตล์แถวสลับสี (zebra)
+        try:
+            self.table.tag_configure("odd", background="#fafafa")
+            self.table.tag_configure("even", background="#f2f4f7")
+            self.table.tag_configure("child", foreground="#555555")
+        except Exception:
+            pass
+
         self.table.grid(row=1, column=0, sticky="nsew")
         scr = ttk.Scrollbar(right, orient=tk.VERTICAL, command=self.table.yview)
         self.table.configure(yscrollcommand=scr.set)
@@ -464,6 +488,7 @@ class BillSplitApp(ttk.Frame):
 
     # ---------- Helper Methods ----------
     def _refresh_people_widgets(self):
+        # อัปเดตรายชื่อให้กับ Combobox ผู้จ่าย และ Listbox ผู้ร่วมกิน
         names = list(self.bill.people.keys())
         self.payer_combo["values"] = names
         self.participants_list.delete(0, tk.END)
@@ -471,10 +496,120 @@ class BillSplitApp(ttk.Frame):
             self.participants_list.insert(tk.END, n)
 
     def toggle_all_participants(self):
+        # ติ๊ก "ทุกคน" เพื่อเลือก/ยกเลิกเลือกทั้งหมดใน Listbox
         if self.all_var.get():
-            self.participants_list.select_set(0, tk.END)
+            # เลือกทั้งหมด
+            if self.participants_list.size() > 0:
+                self.participants_list.select_set(0, tk.END)
         else:
+            # เคลียร์การเลือก
             self.participants_list.select_clear(0, tk.END)
+
+    # ---------- Table helpers & formatting ----------
+    def _compute_scale(self) -> float:
+        subtotal = sum(i.price for i in self.bill.items)
+        if subtotal <= 0:
+            return 1.0
+        svc = subtotal * (self.bill.service_pct / 100.0)
+        vat = (subtotal + svc) * (self.bill.vat_pct / 100.0)
+        total = subtotal + svc + vat + self.bill.tip
+        return total / subtotal
+
+    def _format_weights(self, it: Item) -> str:
+        if not it.weights:
+            return "-"
+        return ", ".join(f"{p}={v:g}" for p, v in it.weights.items())
+
+    def _per_head_for_item(self, it: Item) -> float:
+        # ค่าต่อหัวของเมนูนี้ (รวม service/VAT/tip ผ่านสเกล)
+        scale = self._compute_scale()
+        if not it.participants:
+            return 0.0
+        if it.weights:
+            totw = sum(it.weights[p] for p in it.participants)
+            # แสดงเป็น "เฉลี่ยต่อหนึ่งน้ำหนัก"
+            return it.price * scale / totw
+        else:
+            return (it.price * scale) / len(it.participants)
+
+    def _item_shares(self, it: Item) -> Dict[str, float]:
+        # สัดส่วนต่อคนของเมนูนี้ (รวม service/VAT/tip ผ่านสเกล) เพื่อแสดงแถวลูก
+        scale = self._compute_scale()
+        shares = {}
+        if not it.participants:
+            return shares
+        if it.weights:
+            totw = sum(it.weights[p] for p in it.participants)
+            for p in it.participants:
+                shares[p] = (it.price * scale) * (it.weights[p] / totw)
+        else:
+            each = (it.price * scale) / len(it.participants)
+            for p in it.participants:
+                shares[p] = each
+        return shares
+
+    def _add_item_to_table(self, idx0: int, it: Item):
+        # แถวพ่อ (เมนู)
+        rowvals = (
+            idx0 + 1,
+            it.name,
+            f"{it.price:,.2f}",
+            it.payer,
+            len(it.participants),
+            ", ".join(it.participants),
+            "น้ำหนัก" if it.weights else "เท่ากัน",
+            f"{self._per_head_for_item(it):,.2f}",
+            self._format_weights(it),
+        )
+        tag = "odd" if (idx0 % 2 == 0) else "even"
+        parent_id = self.table.insert("", tk.END, values=rowvals, tags=(tag,))
+
+        # แถวลูก (แจกแจงต่อคน)
+        shares = self._item_shares(it)
+        for p in it.participants:
+            cvals = ("", f"• {p}", "", "", "", "", "", f"{shares.get(p, 0.0):,.2f}", "")
+            self.table.insert(parent_id, tk.END, values=cvals, tags=("child",))
+
+    def _rebuild_table(self):
+        self.table.delete(*self.table.get_children())
+        for i, it in enumerate(self.bill.items):
+            self._add_item_to_table(i, it)
+
+    def _apply_zebra(self):
+        # เรียกกรณีอยากปรับสลับสีใหม่หลัง sort (ถ้าจำเป็น)
+        roots = self.table.get_children("")
+        for i, rid in enumerate(roots):
+            self.table.item(rid, tags=("odd" if (i % 2 == 0) else "even",))
+
+    def _sort_by(self, col: str, reverse: Optional[bool] = None):
+        # sort เฉพาะแถวพ่อ (root items) แล้วพาลูกติดไปด้วย
+        col_index = self.table_cols.index(col)
+        parents = list(self.table.get_children(""))
+
+        def key_of(rid):
+            vals = self.table.item(rid, "values")
+            v = vals[col_index]
+            # แปลงเป็น float ถ้าเป็นคอลัมน์ตัวเลข
+            num_cols = {"idx", "price", "count", "per_head"}
+            if col in num_cols:
+                try:
+                    return float(str(v).replace(",", "").replace("บาท", "").strip())
+                except Exception:
+                    return 0.0
+            # ข้อความปกติ
+            return str(v).lower()
+
+        # toggle direction ถ้าไม่ระบุ
+        if reverse is None:
+            reverse = getattr(self, "_sort_rev_"+col, False)
+        parents.sort(key=key_of, reverse=reverse)
+        setattr(self, "_sort_rev_"+col, not reverse)
+
+        # ย้ายแถวตามลำดับใหม่ พร้อมแถวลูก
+        for pos, rid in enumerate(parents):
+            self.table.move(rid, "", pos)
+
+        self._apply_zebra()
 
     # ---------- Cloud / Firebase ----------
     def connect_firebase(self):
@@ -569,9 +704,11 @@ class BillSplitApp(ttk.Frame):
         self.service_var.set(str(self.bill.service_pct))
         self.vat_var.set(str(self.bill.vat_pct))
         self.tip_var.set(str(self.bill.tip))
-        self.table.delete(*self.table.get_children())
-        for it in self.bill.items:
-            self.table.insert("", tk.END, values=(f"{it.price:,.2f}", it.payer, ", ".join(it.participants), "Yes" if it.weights else "No"))
+
+        # สร้างตารางใหม่ทั้งหมด (แถวพ่อ+ลูก)
+        self._rebuild_table()
+
+        # สรุป
         self.refresh_summary()
 
     def _keep_synced(self):
@@ -715,11 +852,11 @@ class BillSplitApp(ttk.Frame):
                         messagebox.showwarning("เตือน", "ใส่ตัวเลข > 0 นะ")
         try:
             self.bill.add_item(Item(name=name, price=price, payer=payer, participants=parts, weights=weights))
-            self.table.insert("", tk.END, values=(f"{price:,.2f}", payer, ", ".join(parts), "Yes" if weights else "No"))
             self.item_name.delete(0, tk.END)
             self.item_price.delete(0, tk.END)
             self.use_weights.set(False)
             self.refresh_summary()
+            self._rebuild_table()
             self._push_bill()
         except Exception as e:
             messagebox.showerror("ผิดพลาด", str(e))
@@ -729,9 +866,18 @@ class BillSplitApp(ttk.Frame):
         if not sel:
             messagebox.showinfo("แจ้ง", "กรุณาเลือกรายการที่จะลบ")
             return
-        idx = self.table.index(sel[0])
-        self.bill.remove_item_at(idx)
-        self.table.delete(sel[0])
+        rid = sel[0]
+        # ถ้าเลือกแถวลูก ให้ไต่อัพไปหาแถวพ่อ
+        parent = self.table.parent(rid) or rid
+        vals = self.table.item(parent, "values")
+        try:
+            idx1 = int(vals[0])  # คอลัมน์ idx เป็น 1-based
+        except Exception:
+            messagebox.showerror("ผิดพลาด", "ไม่พบดัชนีรายการ")
+            return
+        idx0 = idx1 - 1
+        self.bill.remove_item_at(idx0)
+        self._rebuild_table()
         self.refresh_summary()
         self._push_bill()
 
