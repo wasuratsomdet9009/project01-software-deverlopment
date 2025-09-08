@@ -1,14 +1,12 @@
-# split_bill_all_in_one.py
+# split_bill_with_login.py
 # ------------------------------------------------------------
-# ไฟล์เดียวจบ: Logic คำนวณ + Tkinter UI + Firebase (Auth + RTDB Streaming/Polling)
-# ✔ แชร์ข้อมูลบิลแบบเรียลไทม์ (SSE) พร้อมโพลลิ่งสำรอง
-# ✔ อัปเดต UI ผ่านเมนเธรด (Tkinter-safe)
-# ✔ กันลูปสะท้อน + เทียบ updatedAt
-# ✔ รีเฟรชโทเคนอัตโนมัติ
+# Tkinter 2 หน้า: Login (Sign in/Sign up) + Bill Split App
+# Firebase: Email/Password Auth + Realtime Database (SSE/poll)
+# ตารางละเอียดพร้อมแถวลูก, sort คอลัมน์, zebra
 # ------------------------------------------------------------
 
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Callable
 from collections import defaultdict
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog, filedialog
@@ -21,13 +19,13 @@ except Exception:
     SSEClient = None  # ไม่มีไลบรารี ก็จะใช้ polling แทน
 
 # =====================
-# Firebase Config — แก้ค่านี้ให้เป็นของโปรเจกต์คุณ
+# Firebase Config — เปลี่ยนให้เป็นโปรเจกต์ของคุณ
 # =====================
 FIREBASE_API_KEY = "AIzaSyAL3zittLydgTBzslUwFY_gtxpBv_lSIuA"
 FIREBASE_RTDB_URL = "https://software-project01-default-rtdb.firebaseio.com/"
 
 # =====================
-# Core Logic (Bill Engine)
+# Bill Engine (Logic)
 # =====================
 @dataclass
 class Person:
@@ -37,9 +35,9 @@ class Person:
 class Item:
     name: str
     price: float
-    payer: str                   # ชื่อคนที่จ่ายก่อน
-    participants: List[str]      # รายชื่อคนที่ร่วมกิน/หาร
-    weights: Optional[Dict[str, float]] = None  # ถ้าหารไม่เท่ากัน ให้ใส่น้ำหนัก เช่น {"A":2, "B":1}
+    payer: str
+    participants: List[str]
+    weights: Optional[Dict[str, float]] = None
 
 @dataclass
 class Bill:
@@ -49,7 +47,7 @@ class Bill:
     vat_pct: float = 0.0
     tip: float = 0.0
 
-    # -------------------- People --------------------
+    # People
     def add_person(self, name: str):
         name = name.strip()
         if not name:
@@ -65,7 +63,7 @@ class Bill:
                     raise ValueError("ลบไม่ได้: มีรายการที่เกี่ยวข้องกับคนนี้")
             del self.people[name]
 
-    # -------------------- Items --------------------
+    # Items
     def add_item(self, item: Item):
         if item.payer not in self.people:
             raise ValueError(f"ไม่พบผู้จ่ายเงิน: {item.payer}")
@@ -87,7 +85,7 @@ class Bill:
         if 0 <= idx < len(self.items):
             self.items.pop(idx)
 
-    # -------------------- Calc --------------------
+    # Calc
     def _totals(self):
         subtotal = sum(i.price for i in self.items)
         service_fee = subtotal * (self.service_pct / 100.0)
@@ -162,7 +160,7 @@ class Bill:
                 j += 1
         return txs
 
-    # -------------------- Serialize --------------------
+    # Serialize
     def to_dict(self):
         return {
             "people": list(self.people.keys()),
@@ -197,7 +195,7 @@ class Bill:
         return b
 
 # =====================
-# Firebase REST + Streaming client
+# Firebase REST + Streaming
 # =====================
 class FirebaseRTClient:
     def __init__(self, api_key: str, rtdb_url: str):
@@ -209,12 +207,26 @@ class FirebaseRTClient:
         self._stop_stream = False
         self._stream_thread = None
 
-    # ---------- Auth ----------
+    def _post_json(self, url, payload):
+        res = requests.post(url, json=payload)
+        try:
+            res.raise_for_status()
+            return res.json()
+        except requests.HTTPError as e:
+            # ดึงข้อความ error ของ Firebase ออกมา
+            try:
+                err = res.json()
+                raw = err.get("error", {}).get("message", "")
+            except Exception:
+                raw = res.text
+            # โยนเป็น RuntimeError พร้อมข้อความสั้นที่เข้าใจง่าย
+            raise RuntimeError(raw or str(e)) from None
+
     def sign_in_email(self, email: str, password: str):
         url = f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={self.api_key}"
-        res = requests.post(url, json={"email": email, "password": password, "returnSecureToken": True})
-        res.raise_for_status()
-        data = res.json()
+        data = self._post_json(url, {
+            "email": email, "password": password, "returnSecureToken": True
+        })
         self.id_token = data["idToken"]
         self.refresh_token = data["refreshToken"]
         self.local_uid = data["localId"]
@@ -222,15 +234,15 @@ class FirebaseRTClient:
 
     def sign_up_email(self, email: str, password: str):
         url = f"https://identitytoolkit.googleapis.com/v1/accounts:signUp?key={self.api_key}"
-        res = requests.post(url, json={"email": email, "password": password, "returnSecureToken": True})
-        res.raise_for_status()
-        data = res.json()
+        data = self._post_json(url, {
+            "email": email, "password": password, "returnSecureToken": True
+        })
         self.id_token = data["idToken"]
         self.refresh_token = data["refreshToken"]
         self.local_uid = data["localId"]
         return data
 
-    # ---------- Token refresh ----------
+    # Token refresh
     def refresh_id_token(self):
         if not self.refresh_token:
             return
@@ -255,7 +267,7 @@ class FirebaseRTClient:
                     pass
         threading.Thread(target=loop, daemon=True).start()
 
-    # ---------- RTDB REST ----------
+    # RTDB REST
     def _auth_params(self):
         if not self.id_token:
             raise RuntimeError("Not authenticated")
@@ -291,8 +303,8 @@ class FirebaseRTClient:
         res.raise_for_status()
         return res.json()
 
-    # ---------- Streaming (SSE or Polling) ----------
-    def stream(self, path: str, on_event):
+    # Streaming
+    def stream(self, path: str, on_event: Callable):
         if not self.id_token:
             raise RuntimeError("Not authenticated")
         url = f"{self.rtdb_url}/{path}.json"
@@ -312,7 +324,6 @@ class FirebaseRTClient:
                             except Exception:
                                 pass
                 except Exception:
-                    # ต่อโทเคนเผื่อหมดอายุ แล้วลองใหม่
                     try: self.refresh_id_token()
                     except: pass
                     time.sleep(2)
@@ -345,22 +356,112 @@ class FirebaseRTClient:
         self._stop_stream = True
 
 # =====================
-# Tkinter UI
+# Login Page (Frame)
+# =====================
+class LoginPage(ttk.Frame):
+    def __init__(self, master, on_auth_success: Callable[[FirebaseRTClient, str], None]):
+        super().__init__(master)
+        self.on_auth_success = on_auth_success
+        self.fb: Optional[FirebaseRTClient] = None
+
+        self.columnconfigure(0, weight=1)
+        title = ttk.Label(self, text="เข้าสู่ระบบ • Firebase", font=("Segoe UI", 14, "bold"))
+        title.grid(row=0, column=0, pady=(20, 10), sticky="n")
+
+        frm = ttk.Frame(self)
+        frm.grid(row=1, column=0, pady=10, padx=20, sticky="n")
+
+        ttk.Label(frm, text="อีเมล").grid(row=0, column=0, sticky="w")
+        ttk.Label(frm, text="รหัสผ่าน").grid(row=1, column=0, sticky="w")
+        ttk.Label(frm, text="Room ID").grid(row=2, column=0, sticky="w")
+
+        self.email_var = tk.StringVar()
+        self.pwd_var = tk.StringVar()
+        self.room_var = tk.StringVar()
+
+        ttk.Entry(frm, textvariable=self.email_var, width=28).grid(row=0, column=1, pady=5, sticky="we")
+        ttk.Entry(frm, textvariable=self.pwd_var, width=28, show="*").grid(row=1, column=1, pady=5, sticky="we")
+        ttk.Entry(frm, textvariable=self.room_var, width=28).grid(row=2, column=1, pady=5, sticky="we")
+
+        btns = ttk.Frame(self)
+        btns.grid(row=2, column=0, pady=10)
+        ttk.Button(btns, text="เข้าสู่ระบบ", command=self.sign_in).pack(side=tk.LEFT, padx=6)
+        ttk.Button(btns, text="สมัครผู้ใช้ใหม่", command=self.sign_up).pack(side=tk.LEFT, padx=6)
+
+        self.status = ttk.Label(self, text="สถานะ: offline")
+        self.status.grid(row=3, column=0, pady=(10, 20))
+
+    def _do_auth(self, mode: str):
+        email = self.email_var.get().strip()
+        pwd = self.pwd_var.get().strip()
+        room = self.room_var.get().strip()
+        if not email or not pwd:
+            messagebox.showwarning("แจ้ง", "กรอกอีเมลและรหัสผ่าน")
+            return
+        if not room:
+            messagebox.showwarning("แจ้ง", "กรอก Room ID")
+            return
+        if not FIREBASE_API_KEY or "FIREBASE_API_KEY" in FIREBASE_API_KEY:
+            messagebox.showwarning("Config", "กรุณาตั้งค่า FIREBASE_API_KEY/RTDB_URL ในไฟล์")
+            return
+
+        self.fb = FirebaseRTClient(FIREBASE_API_KEY, FIREBASE_RTDB_URL)
+        try:
+            if mode == "in":
+                self.fb.sign_in_email(email, pwd)
+            else:
+                self.fb.sign_up_email(email, pwd)
+        except Exception as e:
+            msg = str(e)  # ข้อความดิบจาก Firebase เช่น EMAIL_NOT_FOUND, INVALID_PASSWORD
+            # mapping แบบหยาบให้เข้าใจง่าย
+            if "EMAIL_NOT_FOUND" in msg:
+                thai = "ไม่พบบัญชีนี้ กรุณาใช้ปุ่ม 'สมัครผู้ใช้ใหม่' ก่อน"
+            elif "INVALID_PASSWORD" in msg:
+                thai = "รหัสผ่านไม่ถูกต้อง"
+            elif "WEAK_PASSWORD" in msg:
+                thai = "รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร"
+            elif "INVALID_EMAIL" in msg:
+                thai = "รูปแบบอีเมลไม่ถูกต้อง"
+            elif "MISSING_PASSWORD" in msg:
+                thai = "กรุณากรอกรหัสผ่าน"
+            elif "OPERATION_NOT_ALLOWED" in msg:
+                thai = "ยังไม่ได้เปิด Email/Password ใน Firebase Console → Authentication"
+            else:
+                thai = f"ไม่สำเร็จ: {msg}"
+            messagebox.showerror("Firebase", thai)
+            self.fb = None
+            return
+
+        self.fb.start_auto_refresh()
+        self.status.config(text=f"สถานะ: online (uid={self.fb.local_uid[:6]}…)")
+
+        # ส่งต่อไปหน้า App
+        self.on_auth_success(self.fb, room)
+
+    def sign_in(self):
+        self._do_auth("in")
+
+    def sign_up(self):
+        self._do_auth("up")
+
+# =====================
+# Main App (Frame)
 # =====================
 class BillSplitApp(ttk.Frame):
-    def __init__(self, master):
+    def __init__(self, master, fb: FirebaseRTClient, room_id: str):
         super().__init__(master)
         self.master.title("หารค่าอาหารกับเพื่อน • Tkinter + Firebase")
-        self.master.geometry("1100x660")
-        self.pack(fill=tk.BOTH, expand=True)
+        self.master.geometry("1120x680")
 
         self.bill = Bill()
-        self.fb: Optional[FirebaseRTClient] = None
-        self.room_id: Optional[str] = None
-        self._local_change = False  # กันอีเวนต์สะท้อนกลับ
-        self._last_remote_ua = None  # เก็บ timestamp ล่าสุดจาก cloud
+        self.fb = fb
+        self.room_id = room_id.strip()
+        self._local_change = False
+        self._last_remote_ua = None
 
         self._build_layout()
+        self._connect_and_subscribe()
+        self.after(3000, self._keep_synced)
 
     # ---------- UI Layout ----------
     def _build_layout(self):
@@ -368,24 +469,23 @@ class BillSplitApp(ttk.Frame):
         self.columnconfigure(1, weight=1)
         self.rowconfigure(0, weight=1)
 
-        # Left sidebar (People + Config + Item form + Cloud)
+        # Left
         left = ttk.Frame(self)
         left.grid(row=0, column=0, sticky="nsw", padx=10, pady=10)
 
-        # Right main (Items table + Output)
+        # Right
         right = ttk.Frame(self)
         right.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
         right.rowconfigure(1, weight=1)
         right.columnconfigure(0, weight=1)
 
-        # --- Cloud / Firebase ---
-        ttk.Label(left, text="Cloud Sync (Firebase)", font=("Segoe UI", 11, "bold")).grid(row=0, column=0, columnspan=3, sticky="w")
-        ttk.Button(left, text="เชื่อม Firebase", command=self.connect_firebase).grid(row=1, column=0, sticky="we")
-        self.cloud_lbl = ttk.Label(left, text="สถานะ: offline")
-        self.cloud_lbl.grid(row=1, column=1, columnspan=2, sticky="w", padx=6)
+        # Header cloud
+        ttk.Label(left, text=f"Room: {self.room_id}", font=("Segoe UI", 11, "bold")).grid(row=0, column=0, columnspan=3, sticky="w")
+        self.cloud_lbl = ttk.Label(left, text="สถานะ: connecting…")
+        self.cloud_lbl.grid(row=1, column=0, columnspan=3, sticky="w", pady=(0, 8))
 
-        # --- People Section ---
-        ttk.Label(left, text="รายชื่อเพื่อน", font=("Segoe UI", 11, "bold")).grid(row=2, column=0, columnspan=3, sticky="w", pady=(10,0))
+        # People
+        ttk.Label(left, text="รายชื่อเพื่อน", font=("Segoe UI", 11, "bold")).grid(row=2, column=0, columnspan=3, sticky="w", pady=(6,0))
         self.person_entry = ttk.Entry(left, width=20)
         self.person_entry.grid(row=3, column=0, sticky="w")
         ttk.Button(left, text="เพิ่ม", command=self.add_person).grid(row=3, column=1, padx=5)
@@ -393,8 +493,8 @@ class BillSplitApp(ttk.Frame):
         self.people_list = tk.Listbox(left, height=8, exportselection=False)
         self.people_list.grid(row=4, column=0, columnspan=3, sticky="we", pady=5)
 
-        # --- Config Section ---
-        ttk.Label(left, text="ตั้งค่า Service/VAT/Tip", font=("Segoe UI", 11, "bold")).grid(row=5, column=0, columnspan=3, sticky="w", pady=(10,0))
+        # Config
+        ttk.Label(left, text="ตั้งค่า Service/VAT/Tip", font=("Segoe UI", 11, "bold")).grid(row=5, column=0, columnspan=3, sticky="w", pady=(8,0))
         frm_cfg = ttk.Frame(left)
         frm_cfg.grid(row=6, column=0, columnspan=3, sticky="we")
         ttk.Label(frm_cfg, text="Service %").grid(row=0, column=0, sticky="w")
@@ -408,8 +508,8 @@ class BillSplitApp(ttk.Frame):
         ttk.Entry(frm_cfg, textvariable=self.tip_var, width=10).grid(row=2, column=1, padx=5)
         ttk.Button(left, text="อัปเดตค่า Config", command=self.update_config).grid(row=7, column=0, columnspan=3, sticky="we", pady=5)
 
-        # --- Item Form ---
-        ttk.Label(left, text="เพิ่มรายการอาหาร", font=("Segoe UI", 11, "bold")).grid(row=8, column=0, columnspan=3, sticky="w", pady=(10,0))
+        # Item Form
+        ttk.Label(left, text="เพิ่มรายการอาหาร", font=("Segoe UI", 11, "bold")).grid(row=8, column=0, columnspan=3, sticky="w", pady=(8,0))
         frm_item = ttk.Frame(left)
         frm_item.grid(row=9, column=0, columnspan=3, sticky="we")
         ttk.Label(frm_item, text="ชื่อเมนู").grid(row=0, column=0, sticky="w")
@@ -433,23 +533,36 @@ class BillSplitApp(ttk.Frame):
         ttk.Button(btns, text="เพิ่มรายการ", command=self.add_item).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=2)
         ttk.Button(btns, text="ลบรายการที่เลือก", command=self.remove_selected_item).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=2)
 
-        # --- Items Table ---
+        # Items Table
         ttk.Label(right, text="รายการทั้งหมด", font=("Segoe UI", 11, "bold")).grid(row=0, column=0, sticky="w")
-        self.table = ttk.Treeview(right, columns=("price", "payer", "participants", "weights"), show="headings", height=12)
-        self.table.heading("price", text="ราคา")
-        self.table.heading("payer", text="ผู้จ่าย")
-        self.table.heading("participants", text="ผู้ร่วมกิน")
-        self.table.heading("weights", text="weights?")
-        self.table.column("price", width=80, anchor="e")
-        self.table.column("payer", width=100)
-        self.table.column("participants", width=340)
-        self.table.column("weights", width=100, anchor="center")
+        self.table_cols = ("idx", "name", "price", "payer", "count", "participants", "mode", "per_head", "weights")
+        self.table = ttk.Treeview(right, columns=self.table_cols, show="headings", height=12, selectmode="browse")
+        headings = {
+            "idx": "#", "name": "เมนู", "price": "ราคา (บาท)", "payer": "ผู้จ่าย",
+            "count": "คนร่วม", "participants": "รายชื่อผู้ร่วมกิน",
+            "mode": "โหมดหาร", "per_head": "ต่อหัว/เมนู (บาท)", "weights": "น้ำหนัก"
+        }
+        widths = {"idx": 40, "name": 200, "price": 110, "payer": 110, "count": 65,
+                  "participants": 300, "mode": 90, "per_head": 130, "weights": 160}
+        anchors = {"idx": "e", "name": "w", "price": "e", "payer": "w", "count": "e",
+                   "participants": "w", "mode": "center", "per_head": "e", "weights": "w"}
+        for k in self.table_cols:
+            self.table.heading(k, text=headings[k], command=lambda c=k: self._sort_by(c))
+            self.table.column(k, width=widths[k], anchor=anchors[k], stretch=False)
+
+        try:
+            self.table.tag_configure("odd", background="#fafafa")
+            self.table.tag_configure("even", background="#f2f4f7")
+            self.table.tag_configure("child", foreground="#555555")
+        except Exception:
+            pass
+
         self.table.grid(row=1, column=0, sticky="nsew")
         scr = ttk.Scrollbar(right, orient=tk.VERTICAL, command=self.table.yview)
         self.table.configure(yscrollcommand=scr.set)
         scr.grid(row=1, column=1, sticky="ns")
 
-        # --- Summary ---
+        # Summary
         ttk.Label(right, text="สรุปผล", font=("Segoe UI", 11, "bold")).grid(row=2, column=0, sticky="w", pady=(10,0))
         self.output = tk.Text(right, height=12)
         self.output.grid(row=3, column=0, sticky="nsew")
@@ -472,42 +585,15 @@ class BillSplitApp(ttk.Frame):
 
     def toggle_all_participants(self):
         if self.all_var.get():
-            self.participants_list.select_set(0, tk.END)
+            if self.participants_list.size() > 0:
+                self.participants_list.select_set(0, tk.END)
         else:
             self.participants_list.select_clear(0, tk.END)
 
-    # ---------- Cloud / Firebase ----------
-    def connect_firebase(self):
-        if not FIREBASE_API_KEY or "YOUR_WEB_API_KEY" in FIREBASE_API_KEY:
-            messagebox.showwarning("Config", "กรุณาตั้งค่า FIREBASE_API_KEY และ FIREBASE_RTDB_URL ในไฟล์ก่อน")
-            return
-        email = simpledialog.askstring("เข้าสู่ระบบ", "อีเมล:", parent=self)
-        if email is None: return
-        pwd = simpledialog.askstring("เข้าสู่ระบบ", "รหัสผ่าน:", parent=self, show="*")
-        if pwd is None: return
-        self.fb = FirebaseRTClient(FIREBASE_API_KEY, FIREBASE_RTDB_URL)
+    # ---------- Firebase wiring ----------
+    def _connect_and_subscribe(self):
         try:
-            try:
-                self.fb.sign_in_email(email, pwd)
-            except Exception:
-                self.fb.sign_up_email(email, pwd)
-        except Exception as e:
-            messagebox.showerror("Firebase", f"ล็อกอินไม่สำเร็จ: {e}")
-            self.fb = None
-            return
-
-        self.fb.start_auto_refresh()  # ต่ออายุโทเคนอัตโนมัติ
-
-        room = simpledialog.askstring("เข้าร่วมห้อง", "Room ID (เช่น classA-2025):", parent=self)
-        if not room:
-            messagebox.showwarning("แจ้ง", "ต้องใส่ Room ID")
-            return
-        self.room_id = room.strip()
-
-        try:
-            # ลงทะเบียนเป็นสมาชิกห้อง (ให้ผ่าน rules)
             self.fb.patch(f"rooms/{self.room_id}/members/{self.fb.local_uid}", {"joinedAt": int(time.time())})
-            # โหลดข้อมูลบิลล่าสุด
             data = self.fb.get(f"bills/{self.room_id}")
             if data:
                 self.bill = Bill.from_dict(data)
@@ -517,7 +603,6 @@ class BillSplitApp(ttk.Frame):
         except Exception:
             pass
 
-        # subscribe real-time (ดึงสแนปช็อตเต็มทุกครั้ง)
         def on_event(ev):
             if self._local_change:
                 return
@@ -544,9 +629,6 @@ class BillSplitApp(ttk.Frame):
         except Exception:
             self.cloud_lbl.config(text=f"สถานะ: online (poll)")
 
-        # watchdog โพลลิ่งสำรอง
-        self.after(3000, self._keep_synced)
-
     def _push_bill(self):
         if not (self.fb and self.room_id):
             return
@@ -555,27 +637,11 @@ class BillSplitApp(ttk.Frame):
             data = self.bill.to_dict()
             data["lastEditBy"] = self.fb.local_uid
             self.fb.put(f"bills/{self.room_id}", data)
-            # เก็บ timestamp ไว้เทียบกับ cloud
             self._last_remote_ua = data["updatedAt"]
         finally:
-            # กันรับอีเวนต์สะท้อนกลับทันทีหลัง push
             self.after(300, lambda: setattr(self, "_local_change", False))
 
-    def _render_all_from_bill(self):
-        self.people_list.delete(0, tk.END)
-        for n in self.bill.people:
-            self.people_list.insert(tk.END, n)
-        self._refresh_people_widgets()
-        self.service_var.set(str(self.bill.service_pct))
-        self.vat_var.set(str(self.bill.vat_pct))
-        self.tip_var.set(str(self.bill.tip))
-        self.table.delete(*self.table.get_children())
-        for it in self.bill.items:
-            self.table.insert("", tk.END, values=(f"{it.price:,.2f}", it.payer, ", ".join(it.participants), "Yes" if it.weights else "No"))
-        self.refresh_summary()
-
     def _keep_synced(self):
-        # ตรวจทุก 3 วิ เผื่อสตรีมเงียบ/หลุด จะดึงสแนปช็อตเอง
         if self.fb and self.room_id and not self._local_change:
             try:
                 full = self.fb.get(f"bills/{self.room_id}")
@@ -588,6 +654,98 @@ class BillSplitApp(ttk.Frame):
             except Exception:
                 pass
         self.after(3000, self._keep_synced)
+
+    # ---------- Table helpers ----------
+    def _compute_scale(self) -> float:
+        subtotal = sum(i.price for i in self.bill.items)
+        if subtotal <= 0:
+            return 1.0
+        svc = subtotal * (self.bill.service_pct / 100.0)
+        vat = (subtotal + svc) * (self.bill.vat_pct / 100.0)
+        total = subtotal + svc + vat + self.bill.tip
+        return total / subtotal
+
+    def _format_weights(self, it: Item) -> str:
+        if not it.weights:
+            return "-"
+        return ", ".join(f"{p}={v:g}" for p, v in it.weights.items())
+
+    def _per_head_for_item(self, it: Item) -> float:
+        scale = self._compute_scale()
+        if not it.participants:
+            return 0.0
+        if it.weights:
+            totw = sum(it.weights[p] for p in it.participants)
+            return it.price * scale / totw
+        else:
+            return (it.price * scale) / len(it.participants)
+
+    def _item_shares(self, it: Item) -> Dict[str, float]:
+        scale = self._compute_scale()
+        shares = {}
+        if not it.participants:
+            return shares
+        if it.weights:
+            totw = sum(it.weights[p] for p in it.participants)
+            for p in it.participants:
+                shares[p] = (it.price * scale) * (it.weights[p] / totw)
+        else:
+            each = (it.price * scale) / len(it.participants)
+            for p in it.participants:
+                shares[p] = each
+        return shares
+
+    def _add_item_to_table(self, idx0: int, it: Item):
+        rowvals = (
+            idx0 + 1,
+            it.name,
+            f"{it.price:,.2f}",
+            it.payer,
+            len(it.participants),
+            ", ".join(it.participants),
+            "น้ำหนัก" if it.weights else "เท่ากัน",
+            f"{self._per_head_for_item(it):,.2f}",
+            self._format_weights(it),
+        )
+        tag = "odd" if (idx0 % 2 == 0) else "even"
+        parent_id = self.table.insert("", tk.END, values=rowvals, tags=(tag,))
+        shares = self._item_shares(it)
+        for p in it.participants:
+            cvals = ("", f"• {p}", "", "", "", "", "", f"{shares.get(p, 0.0):,.2f}", "")
+            self.table.insert(parent_id, tk.END, values=cvals, tags=("child",))
+
+    def _rebuild_table(self):
+        self.table.delete(*self.table.get_children())
+        for i, it in enumerate(self.bill.items):
+            self._add_item_to_table(i, it)
+
+    def _apply_zebra(self):
+        roots = self.table.get_children("")
+        for i, rid in enumerate(roots):
+            self.table.item(rid, tags=("odd" if (i % 2 == 0) else "even",))
+
+    def _sort_by(self, col: str, reverse: Optional[bool] = None):
+        col_index = self.table_cols.index(col)
+        parents = list(self.table.get_children(""))
+
+        def key_of(rid):
+            vals = self.table.item(rid, "values")
+            v = vals[col_index]
+            num_cols = {"idx", "price", "count", "per_head"}
+            if col in num_cols:
+                try:
+                    return float(str(v).replace(",", "").replace("บาท", "").strip())
+                except Exception:
+                    return 0.0
+            return str(v).lower()
+
+        if reverse is None:
+            reverse = getattr(self, "_sort_rev_"+col, False)
+        parents.sort(key=key_of, reverse=reverse)
+        setattr(self, "_sort_rev_"+col, not reverse)
+        for pos, rid in enumerate(parents):
+            self.table.move(rid, "", pos)
+        self._apply_zebra()
 
     # ---------- Local Save/Load/Copy/Export ----------
     def copy_summary(self):
@@ -610,7 +768,7 @@ class BillSplitApp(ttk.Frame):
             data = json.load(f)
         self.bill = Bill.from_dict(data)
         self._render_all_from_bill()
-        self._push_bill()  # ถ้าออนไลน์อยู่ให้ซิงก์ขึ้น cloud ด้วย
+        self._push_bill()
 
     def export_transfers_csv(self):
         txs = self.bill.settle_transactions()
@@ -715,11 +873,11 @@ class BillSplitApp(ttk.Frame):
                         messagebox.showwarning("เตือน", "ใส่ตัวเลข > 0 นะ")
         try:
             self.bill.add_item(Item(name=name, price=price, payer=payer, participants=parts, weights=weights))
-            self.table.insert("", tk.END, values=(f"{price:,.2f}", payer, ", ".join(parts), "Yes" if weights else "No"))
             self.item_name.delete(0, tk.END)
             self.item_price.delete(0, tk.END)
             self.use_weights.set(False)
             self.refresh_summary()
+            self._rebuild_table()
             self._push_bill()
         except Exception as e:
             messagebox.showerror("ผิดพลาด", str(e))
@@ -729,11 +887,31 @@ class BillSplitApp(ttk.Frame):
         if not sel:
             messagebox.showinfo("แจ้ง", "กรุณาเลือกรายการที่จะลบ")
             return
-        idx = self.table.index(sel[0])
-        self.bill.remove_item_at(idx)
-        self.table.delete(sel[0])
+        rid = sel[0]
+        parent = self.table.parent(rid) or rid
+        vals = self.table.item(parent, "values")
+        try:
+            idx1 = int(vals[0])
+        except Exception:
+            messagebox.showerror("ผิดพลาด", "ไม่พบดัชนีรายการ")
+            return
+        idx0 = idx1 - 1
+        self.bill.remove_item_at(idx0)
+        self._rebuild_table()
         self.refresh_summary()
         self._push_bill()
+
+    # ---------- Render summary ----------
+    def _render_all_from_bill(self):
+        self.people_list.delete(0, tk.END)
+        for n in self.bill.people:
+            self.people_list.insert(tk.END, n)
+        self._refresh_people_widgets()
+        self.service_var.set(str(self.bill.service_pct))
+        self.vat_var.set(str(self.bill.vat_pct))
+        self.tip_var.set(str(self.bill.tip))
+        self._rebuild_table()
+        self.refresh_summary()
 
     def reset_all(self):
         if messagebox.askyesno("ยืนยัน", "ล้างข้อมูลทั้งหมด?"):
@@ -763,8 +941,9 @@ class BillSplitApp(ttk.Frame):
         except Exception as e:
             messagebox.showerror("ผิดพลาด", str(e))
             return
-        def money(x):
-            return f"{x:,.2f} บาท"
+
+        def money(x): return f"{x:,.2f} บาท"
+
         self.output.delete(1.0, tk.END)
         self.output.insert(tk.END, "สรุปร้าน/บิล\n")
         self.output.insert(tk.END, f"  Subtotal: {money(subtotal)}\n")
@@ -772,6 +951,7 @@ class BillSplitApp(ttk.Frame):
         self.output.insert(tk.END, f"  VAT {self.bill.vat_pct:.2f}%: {money(vat)}\n")
         self.output.insert(tk.END, f"  Tip: {money(self.bill.tip)}\n")
         self.output.insert(tk.END, f"  Total: {money(total)}\n\n")
+
         self.output.insert(tk.END, "ควรจ่าย (รวม service/VAT/ทิป ตามสัดส่วนการกิน)\n")
         for n in self.bill.people:
             self.output.insert(tk.END, f"  - {n}: {money(should.get(n, 0.0))}\n")
@@ -788,15 +968,39 @@ class BillSplitApp(ttk.Frame):
             for t in txs:
                 self.output.insert(tk.END, f"  - {t['from']} → {t['to']}: {money(t['amount'])}\n")
 
+# =====================
+# App Controller (สลับหน้า)
+# =====================
+class App(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("Bill Split • Login + App")
+        self.geometry("1120x680")
+        # Theme (optional)
+        try:
+            self.call("source", "azure.tcl")
+            ttk.Style().theme_use("azure")
+        except Exception:
+            pass
+
+        self.current_frame: Optional[ttk.Frame] = None
+        self.show_login()
+
+    def show_login(self):
+        if self.current_frame:
+            self.current_frame.destroy()
+        self.current_frame = LoginPage(self, self.on_auth_success)
+        self.current_frame.pack(fill="both", expand=True, padx=10, pady=10)
+
+    def on_auth_success(self, fb_client: FirebaseRTClient, room_id: str):
+        if self.current_frame:
+            self.current_frame.destroy()
+        self.current_frame = BillSplitApp(self, fb_client, room_id)
+        self.current_frame.pack(fill="both", expand=True)
+
 # -------------------- main --------------------
 def main():
-    root = tk.Tk()
-    try:
-        root.call("source", "azure.tcl")  # ถ้ามีธีม Azure จะสวยขึ้น
-        ttk.Style().theme_use("azure")
-    except Exception:
-        pass
-    app = BillSplitApp(root)
+    app = App()
     app.mainloop()
 
 if __name__ == "__main__":
