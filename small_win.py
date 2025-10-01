@@ -19,11 +19,12 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Callable
 import json
 import threading
 import time
 import requests
+import re
 
 # --- Configuration ---
 # To use this application, you need to create a project on the Firebase console.
@@ -40,8 +41,9 @@ import requests
 #    }
 #    **WARNING**: These are insecure rules. For production, secure your data properly.
 # 5. Find your Web API Key and Database URL in your project settings.
-FIREBASE_API_KEY = "AIzaSyCw9sLe1AaSi_TVHhTNVEwXGaJLw3DoDA0"  # Replace with your Firebase Web API Key
-FIREBASE_RTDB_URL = "https://smallwin-f475a-default-rtdb.asia-southeast1.firebasedatabase.app"  # Replace with your Firebase Realtime Database URL (e.g., https://your-project-id.firebaseio.com/)
+# Updated to match the bill splitting app's Firebase project
+FIREBASE_API_KEY = "AIzaSyAL3zittLydgTBzslUwFY_gtxpBv_lSIuA"  # From split_bill_all_in_one.py
+FIREBASE_RTDB_URL = "https://software-project01-default-rtdb.firebaseio.com/" # From split_bill_all_in_one.py
 
 # ===============================================
 # DATA MODELS: Representing the application's data
@@ -103,109 +105,163 @@ class WinRoom:
         return room
 
 # ===============================================
-# FIREBASE CLIENT: Handles communication with Firebase
+# FIREBASE CLIENT: Handles communication with Firebase (Upgraded Version)
 # ===============================================
 class FirebaseRTClient:
-    """A client for Firebase Authentication and Realtime Database."""
     def __init__(self, api_key: str, rtdb_url: str):
         self.api_key = api_key
         self.rtdb_url = rtdb_url.rstrip("/")
-        self.id_token: Optional[str] = None
-        self.refresh_token: Optional[str] = None
-        self.local_uid: Optional[str] = None
-        self._stop_stream_event = threading.Event()
-        self._stream_thread: Optional[threading.Thread] = None
+        self.id_token = None
+        self.refresh_token = None
+        self.local_uid = None
+        self._stop_stream = False
+        self._stream_thread = None
 
-    def _make_request(self, method, url, **kwargs):
-        """Helper for making authenticated requests."""
-        if 'params' not in kwargs:
-            kwargs['params'] = {}
-        if self.id_token:
-            kwargs['params']['auth'] = self.id_token
+    # ---------- Auth (with better error translation) ----------
+    ERROR_MAP = {
+        "EMAIL_NOT_FOUND": "ไม่พบบัญชีอีเมลนี้",
+        "INVALID_PASSWORD": "รหัสผ่านไม่ถูกต้อง",
+        "USER_DISABLED": "บัญชีถูกปิดใช้งาน",
+        "EMAIL_EXISTS": "อีเมลนี้ถูกใช้งานแล้ว",
+        "INVALID_EMAIL": "รูปแบบอีเมลไม่ถูกต้อง",
+        "OPERATION_NOT_ALLOWED": "โปรเจกต์ยังไม่เปิดใช้งาน Email/Password บน Firebase Auth",
+        "MISSING_PASSWORD": "กรุณากรอกรหัสผ่าน",
+        "WEAK_PASSWORD": "รหัสผ่านต้องยาวอย่างน้อย 6 ตัว",
+    }
+
+    def _post_json(self, url: str, payload: dict) -> dict:
+        """Makes a POST request and translates Firebase errors into readable messages."""
+        r = requests.post(url, json=payload)
         try:
-            response = requests.request(method, url, **kwargs, timeout=15)
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            print(f"Firebase request failed: {e}")
-            raise
+            r.raise_for_status()
+            return r.json()
+        except requests.HTTPError as e:
+            msg = ""
+            try:
+                j = r.json()
+                raw = j.get("error", {}).get("message", "")
+                msg = raw.split(" : ")[0].strip()
+            except Exception:
+                pass
+            human_readable_error = self.ERROR_MAP.get(msg, msg or str(e))
+            raise ValueError(human_readable_error)
 
-    # --- Authentication ---
-    def sign_in(self, email, password):
+    def sign_in_email(self, email: str, password: str):
         url = f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={self.api_key}"
-        payload = {"email": email, "password": password, "returnSecureToken": True}
-        data = self._make_request('POST', url, json=payload)
-        self._store_auth_credentials(data)
-        return data
+        d = self._post_json(url, {"email": email, "password": password, "returnSecureToken": True})
+        self.id_token = d["idToken"]
+        self.refresh_token = d["refreshToken"]
+        self.local_uid = d["localId"]
+        return d
 
-    def sign_up(self, email, password):
+    def sign_up_email(self, email: str, password: str):
         url = f"https://identitytoolkit.googleapis.com/v1/accounts:signUp?key={self.api_key}"
-        payload = {"email": email, "password": password, "returnSecureToken": True}
-        data = self._make_request('POST', url, json=payload)
-        self._store_auth_credentials(data)
-        return data
+        d = self._post_json(url, {"email": email, "password": password, "returnSecureToken": True})
+        self.id_token = d["idToken"]
+        self.refresh_token = d["refreshToken"]
+        self.local_uid = d["localId"]
+        return d
 
-    def _store_auth_credentials(self, data: dict):
-        self.id_token = data.get("idToken")
-        self.refresh_token = data.get("refreshToken")
-        self.local_uid = data.get("localId")
+    # ---------- Token refresh ----------
+    def refresh_id_token(self):
+        if not self.refresh_token:
+            return
+        url = f"https://securetoken.googleapis.com/v1/token?key={self.api_key}"
+        res = requests.post(url, data={"grant_type": "refresh_token", "refresh_token": self.refresh_token})
+        res.raise_for_status()
+        d = res.json()
+        self.id_token = d["id_token"]
+        self.refresh_token = d["refresh_token"]
+        self.local_uid = d["user_id"]
 
-    # --- Database Operations ---
+    def start_auto_refresh(self, every_sec=50*60):
+        def loop():
+            while True:
+                time.sleep(every_sec)
+                try:
+                    self.refresh_id_token()
+                except:
+                    pass
+        threading.Thread(target=loop, daemon=True).start()
+
+    # REST Database Operations
+    def _auth(self):
+        if not self.id_token: raise RuntimeError("Not authenticated")
+        return {"auth": self.id_token}
+
     def get(self, path: str):
-        return self._make_request('GET', f"{self.rtdb_url}/{path}.json")
+        url = f"{self.rtdb_url}/{path}.json"
+        r = requests.get(url, params=self._auth(), timeout=30); r.raise_for_status(); return r.json()
 
-    def put(self, path: str, data: dict):
-        return self._make_request('PUT', f"{self.rtdb_url}/{path}.json", json=data)
-        
-    def patch(self, path: str, data: dict):
-        return self._make_request('PATCH', f"{self.rtdb_url}/{path}.json", json=data)
+    def put(self, path: str, obj):
+        url = f"{self.rtdb_url}/{path}.json"
+        r = requests.put(url, params=self._auth(), json=obj, timeout=30); r.raise_for_status(); return r.json()
 
-    # --- User Profile Helpers ---
+    def patch(self, path: str, obj):
+        url = f"{self.rtdb_url}/{path}.json"
+        r = requests.patch(url, params=self._auth(), json=obj, timeout=30); r.raise_for_status(); return r.json()
+
+    # Username / Profile Helpers
+    @staticmethod
+    def _norm_uname(u: str) -> str:
+        u = (u or "").strip().lower()
+        if not u: raise ValueError("username ว่างไม่ได้")
+        for bad in ['.', '#', '$', '[', ']', '/']:
+            if bad in u: raise ValueError("username มีอักขระต้องห้าม: . # $ [ ] /")
+        return u
+
+    def reserve_username(self, username: str):
+        uname = self._norm_uname(username)
+        return self.put(f"usernames/{uname}", self.local_uid)
+
+    def uid_from_username(self, username: str) -> Optional[str]:
+        uname = self._norm_uname(username)
+        try: return self.get(f"usernames/{uname}")
+        except requests.HTTPError: return None
+
+    def save_profile(self, username: str, display_name: str):
+        data = {"username": self._norm_uname(username),
+                "displayName": display_name or username,
+                "updatedAt": int(time.time())}
+        return self.put(f"public_profiles/{self.local_uid}", data)
+
     def get_profile(self, uid: str) -> Optional[UserProfile]:
         try:
-            data = self.get(f"profiles/{uid}")
+            data = self.get(f"public_profiles/{uid}")
             if data:
                 return UserProfile(uid=uid, username=data.get('username'), displayName=data.get('displayName'))
-        except requests.exceptions.HTTPError:
+        except requests.HTTPError:
             return None
         return None
 
-    def create_profile(self, uid: str, username: str, displayName: str):
-        # Reserve username to prevent duplicates
-        self.put(f"usernames/{username.lower()}", uid)
-        # Store profile
-        profile_data = {"username": username, "displayName": displayName}
-        self.put(f"profiles/{uid}", profile_data)
+    # Streaming
+    def start_streaming(self, path: str, on_event: Callable):
+        if not self.id_token: raise RuntimeError("Not authenticated")
+        url = f"{self.rtdb_url}/{path}.json"
+        self._stop_stream = False
 
-    def get_uid_from_username(self, username: str) -> Optional[str]:
-        try:
-            return self.get(f"usernames/{username.lower()}")
-        except requests.exceptions.HTTPError:
-            return None
-
-    # --- Real-time Streaming (Polling Fallback) ---
-    def start_streaming(self, path: str, callback):
-        self.stop_streaming() # Ensure no old stream is running
-        self._stop_stream_event.clear()
-        
         def poll_loop():
-            last_data_hash = None
-            while not self._stop_stream_event.is_set():
+            last_hash = None
+            while not self._stop_stream:
                 try:
-                    data = self.get(path)
-                    current_hash = hash(json.dumps(data, sort_keys=True))
-                    if data and current_hash != last_data_hash:
-                        last_data_hash = current_hash
-                        callback(data)
-                except Exception as e:
-                    print(f"Polling error: {e}")
-                time.sleep(2) # Poll every 2 seconds
+                    data = requests.get(url, params=self._auth(), timeout=30).json()
+                    if data is not None:
+                        current_hash = hash(json.dumps(data, sort_keys=True))
+                        if last_hash != current_hash:
+                            on_event(data)
+                            last_hash = current_hash
+                except:
+                    try: self.refresh_id_token()
+                    except: pass
+                time.sleep(3)
 
         self._stream_thread = threading.Thread(target=poll_loop, daemon=True)
         self._stream_thread.start()
 
-    def stop_streaming(self):
-        self._stop_stream_event.set()
+    def stop_streaming(self): 
+        self._stop_stream = True
+        if self._stream_thread:
+            self._stream_thread.join(timeout=1)
 
 # ===============================================
 # MAIN APPLICATION (UI): The Tkinter interface
@@ -226,28 +282,37 @@ class SmallWinsApp(ttk.Frame):
 
         self.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         self._create_widgets()
-        self._show_login_view()
+        
+        # Start with the login view
+        self.login_frame.pack(expand=True, fill="both")
+        self.master.title("Login - Small Wins")
         
     def _create_widgets(self):
-        # --- Main Layout ---
-        self.main_notebook = ttk.Notebook(self)
-        self.login_frame = ttk.Frame(self.main_notebook, padding="20")
-        self.app_frame = ttk.Frame(self.main_notebook, padding="10")
-        
-        self.main_notebook.add(self.login_frame, text="Login")
-        self.main_notebook.add(self.app_frame, text="App")
-        self.main_notebook.pack(expand=True, fill="both")
+        # --- Main Layout Frames ---
+        self.login_frame = ttk.Frame(self, padding="20")
+        self.room_selection_frame = ttk.Frame(self, padding="20")
+        self.app_frame = ttk.Frame(self, padding="10")
         
         self._create_login_widgets()
+        self._create_room_selection_widgets()
         self._create_app_widgets()
-        
-    def _show_login_view(self):
-        self.main_notebook.select(self.login_frame)
+
+    def _switch_to_app_view(self):
+        self.room_selection_frame.pack_forget()
+        self.app_frame.pack(expand=True, fill="both")
+        self.master.title(f"Room: {self.room_id} - Small Wins")
+
+    def _switch_to_login_view(self):
+        self.room_selection_frame.pack_forget()
+        self.app_frame.pack_forget()
+        self.login_frame.pack(expand=True, fill="both")
         self.master.title("Login - Small Wins")
 
-    def _show_app_view(self):
-        self.main_notebook.select(self.app_frame)
-        self.master.title(f"Room: {self.room_id} - Small Wins")
+    def _switch_to_room_selection_view(self):
+        self.login_frame.pack_forget()
+        self.app_frame.pack_forget()
+        self.room_selection_frame.pack(expand=True, fill="both")
+        self.master.title("Select Room - Small Wins")
 
     def _create_login_widgets(self):
         # --- Login/Signup Widgets ---
@@ -266,6 +331,30 @@ class SmallWinsApp(ttk.Frame):
         btn_frame.grid(row=2, column=0, columnspan=2, pady=10)
         ttk.Button(btn_frame, text="Login", command=self.handle_login).pack(side="left", padx=5)
         ttk.Button(btn_frame, text="Sign Up", command=self.handle_signup).pack(side="left", padx=5)
+
+    def _create_room_selection_widgets(self):
+        container = ttk.LabelFrame(self.room_selection_frame, text="Join or Create a Room")
+        container.pack(expand=True)
+
+        # Join Room Section
+        join_frame = ttk.Frame(container, padding=10)
+        join_frame.pack(fill="x", padx=10, pady=5)
+        ttk.Label(join_frame, text="Room ID:").pack(side="left", padx=(0, 5))
+        self.join_room_entry = ttk.Entry(join_frame, width=25)
+        self.join_room_entry.pack(side="left", expand=True, fill="x")
+        ttk.Button(join_frame, text="Join Room", command=self.handle_join_room).pack(side="left", padx=(5, 0))
+
+        ttk.Separator(container, orient="horizontal").pack(fill='x', pady=10, padx=20)
+
+        # Create Room Section
+        create_frame = ttk.Frame(container, padding=10)
+        create_frame.pack(fill="x", padx=10, pady=5)
+        ttk.Label(create_frame, text="Don't have a room?").pack(side="left")
+        ttk.Button(create_frame, text="Create a New Room", command=self.handle_create_room).pack(side="left", padx=5)
+
+        # Logout Button at the bottom of the main frame
+        logout_button = ttk.Button(self.room_selection_frame, text="Logout", command=self.handle_logout)
+        logout_button.pack(side="bottom", pady=20)
         
     def _create_app_widgets(self):
         # --- App Layout ---
@@ -327,28 +416,33 @@ class SmallWinsApp(ttk.Frame):
         ttk.Button(action_frame, text="Delete", command=self.delete_win).pack(side="right")
 
     # --- Firebase & Logic Handlers ---
-    def handle_login(self):
-        email = self.email_entry.get()
+    def _validate_inputs(self):
+        email = self.email_entry.get().strip()
         password = self.password_entry.get()
-        if not email or not password:
-            messagebox.showerror("Error", "Email and password are required.")
-            return
+        if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
+            messagebox.showwarning("Input Error", "รูปแบบอีเมลไม่ถูกต้อง")
+            return None, None
+        if not password:
+            messagebox.showwarning("Input Error", "กรุณากรอกรหัสผ่าน")
+            return None, None
+        return email, password
+
+    def handle_login(self):
+        email, password = self._validate_inputs()
+        if not email: return
             
         if not self.fb:
             self.fb = FirebaseRTClient(FIREBASE_API_KEY, FIREBASE_RTDB_URL)
         
         try:
-            self.fb.sign_in(email, password)
+            self.fb.sign_in_email(email, password)
             self.post_auth_setup()
         except Exception as e:
             messagebox.showerror("Login Failed", f"Could not log in: {e}")
             
     def handle_signup(self):
-        email = self.email_entry.get()
-        password = self.password_entry.get()
-        if not email or not password:
-            messagebox.showerror("Error", "Email and password are required.")
-            return
+        email, password = self._validate_inputs()
+        if not email: return
 
         username = simpledialog.askstring("Sign Up", "Choose a unique username:", parent=self)
         if not username: return
@@ -358,7 +452,7 @@ class SmallWinsApp(ttk.Frame):
             self.fb = FirebaseRTClient(FIREBASE_API_KEY, FIREBASE_RTDB_URL)
             
         try:
-            self.fb.sign_up(email, password)
+            self.fb.sign_up_email(email, password)
             self.fb.create_profile(self.fb.local_uid, username, displayName)
             self.post_auth_setup()
         except Exception as e:
@@ -367,36 +461,83 @@ class SmallWinsApp(ttk.Frame):
     def post_auth_setup(self):
         uid = self.fb.local_uid
         profile = self.fb.get_profile(uid)
+
         if not profile:
-             messagebox.showerror("Error", "Could not load user profile.")
-             return
+            username = simpledialog.askstring("Create Profile", "Choose a unique username for your account:", parent=self)
+            if not username: return 
+            displayName = simpledialog.askstring("Create Profile", "Enter your display name:", parent=self) or username
+            try:
+                self.fb.create_profile(uid, username, displayName)
+                profile = self.fb.get_profile(uid)
+            except Exception as e:
+                messagebox.showerror("Profile Error", f"Could not create your profile: {e}")
+                return
+
+        if not profile:
+            messagebox.showerror("Error", "Could not load or create user profile. Please restart.")
+            return
+
         self.current_user = profile
         self.user_cache[uid] = profile.displayName
+        self.fb.start_auto_refresh()
+        self._switch_to_room_selection_view()
 
-        self.join_or_create_room()
+    def handle_join_room(self):
+        room_id = self.join_room_entry.get().strip()
+        if not room_id:
+            messagebox.showwarning("Input Needed", "Please enter a Room ID to join.")
+            return
+        self._enter_room_flow(room_id, is_new=False)
 
-    def join_or_create_room(self):
-        room_id = simpledialog.askstring("Join Room", "Enter a Room ID to join or create:", parent=self)
-        if not room_id: return
-        self.room_id = room_id.strip()
+    def handle_create_room(self):
+        room_id = simpledialog.askstring("Create Room", "Enter a new, unique Room ID:", parent=self)
+        if not room_id:
+            return
+        self._enter_room_flow(room_id.strip(), is_new=True)
 
+    def _enter_room_flow(self, room_id, is_new):
+        self.room_id = room_id
+        room_path = f"small_wins_rooms/{self.room_id}"
         try:
-            room_data = self.fb.get(f"rooms/{self.room_id}")
-            if room_data: # Room exists
+            room_data = self.fb.get(room_path)
+
+            if is_new and room_data:
+                messagebox.showerror("Error", f"Room ID '{self.room_id}' already exists. Please choose another one.")
+                return
+
+            if not is_new and not room_data:
+                messagebox.showerror("Error", f"Room ID '{self.room_id}' not found.")
+                return
+
+            if room_data: # Joining existing room
                 self.current_room = WinRoom.from_dict(room_data)
-                # Add current user to members if not already there
                 if self.current_user.uid not in self.current_room.members:
                     self.current_room.members[self.current_user.uid] = True
-            else: # Create new room
+            else: # Creating new room
                 self.current_room = WinRoom(name=self.room_id)
                 self.current_room.members[self.current_user.uid] = True
             
             self._save_room_to_firebase()
-            self.fb.start_streaming(f"rooms/{self.room_id}", self.on_room_update)
-            self._show_app_view()
+            self.fb.start_streaming(room_path, self.on_room_update)
+            self._switch_to_app_view()
             self.update_ui_from_room_data()
         except Exception as e:
-            messagebox.showerror("Room Error", f"Failed to join or create room: {e}")
+            messagebox.showerror("Room Error", f"Failed to enter room: {e}")
+            
+    def handle_logout(self):
+        if self.fb:
+            self.fb.stop_streaming()
+        # Reset state
+        self.fb.id_token = None
+        self.fb.refresh_token = None
+        self.fb.local_uid = None
+        self.current_user = None
+        self.room_id = None
+        self.current_room = None
+        self.user_cache.clear()
+        # Clear UI
+        self.password_entry.delete(0, tk.END)
+        self._switch_to_login_view()
 
     def on_room_update(self, data):
         """Callback for when Firebase data changes."""
@@ -411,10 +552,12 @@ class SmallWinsApp(ttk.Frame):
         if not self.fb or not self.current_room or not self.room_id:
             return
         
+        room_path = f"small_wins_rooms/{self.room_id}"
+        
         def save():
             try:
                 self._local_update_flag = True
-                self.fb.put(f"rooms/{self.room_id}", self.current_room.to_dict())
+                self.fb.put(room_path, self.current_room.to_dict())
                 time.sleep(1) # Wait a moment for the update to settle
             finally:
                 self._local_update_flag = False
@@ -545,10 +688,9 @@ class SmallWinsApp(ttk.Frame):
             self.fb.stop_streaming()
             self.room_id = None
             self.current_room = None
-            self.user_cache.clear()
             self.wins_tree.delete(*self.wins_tree.get_children())
             self.members_list.delete(0, tk.END)
-            self._show_login_view()
+            self._switch_to_room_selection_view()
             
     def on_closing(self):
         if self.fb:
