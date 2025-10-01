@@ -8,6 +8,7 @@
 # ✓ RTDB streaming (SSE) + polling สำรอง
 # ✓ เก็บ payer/participants เป็น UID แต่แสดงเป็น username
 # ✓ ตัดปุ่ม Save/Load JSON และ Export CSV ออก
+# ✓ เพิ่มฟีเจอร์ Small Wins (เป้าหมายเล็กๆ)
 # ------------------------------------------------------------
 
 from dataclasses import dataclass, field
@@ -16,6 +17,7 @@ from collections import defaultdict
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
 import json, threading, time, requests, random, string
+from datetime import datetime, timedelta
 
 try:
     from sseclient import SSEClient  # type: ignore
@@ -238,6 +240,11 @@ class FirebaseRTClient:
         url=f"{self.rtdb_url}/{path}.json"; r=requests.put(url, params=self._auth(), json=obj, timeout=30); r.raise_for_status(); return r.json()
     def patch(self, path:str, obj):
         url=f"{self.rtdb_url}/{path}.json"; r=requests.patch(url, params=self._auth(), json=obj, timeout=30); r.raise_for_status(); return r.json()
+    def post(self, path:str, obj): # NEW
+        url=f"{self.rtdb_url}/{path}.json"; r=requests.post(url, params=self._auth(), json=obj, timeout=30); r.raise_for_status(); return r.json()
+    def delete(self, path:str): # NEW
+        url=f"{self.rtdb_url}/{path}.json"; r=requests.delete(url, params=self._auth(), timeout=30); r.raise_for_status(); return r.json()
+
 
     # ---------- Username / Profile ----------
     @staticmethod
@@ -280,6 +287,8 @@ class FirebaseRTClient:
         self.patch(f"rooms_by_user/{self.local_uid}", { room_id: True })
         # สร้างบิลว่าง (ครั้งแรก)
         self.put(f"bills/{room_id}", Bill().to_dict())
+        # สร้าง small_wins ว่าง (ครั้งแรก)
+        self.put(f"small_wins/{room_id}", {})
         return room_id
 
     def add_member(self, room_id: str, target_uid: str, invited_by: Optional[str] = None):
@@ -326,10 +335,8 @@ class FirebaseRTClient:
             while not self._stop_stream:
                 try:
                     data = requests.get(url, params={"auth": self.id_token}, timeout=30).json()
-                    if data is not None:
-                        ua = data.get("updatedAt") if isinstance(data, dict) else None
-                        if last != ua:
-                            on_event({"path": "/", "data": data}); last = ua
+                    if data is not None and data != last:
+                        on_event({"path": "/", "data": data}); last = data
                 except:
                     try: self.refresh_id_token()
                     except: pass
@@ -516,7 +523,7 @@ class BillSplitApp(ttk.Frame):
         self.people_uids: List[str] = []
         self.label2uid: Dict[str,str] = {}
 
-        master.title("หารค่าอาหารกับเพื่อน • Tkinter + Firebase")
+        master.title("หารค่าอาหาร & เป้าหมายเล็กๆ • Tkinter + Firebase")
         master.geometry("1120x700")
         self.pack(fill=tk.BOTH, expand=True)
         self._build_layout()
@@ -526,22 +533,33 @@ class BillSplitApp(ttk.Frame):
 
     # ---------- UI ----------
     def _build_layout(self):
-        self.columnconfigure(0, weight=0); self.columnconfigure(1, weight=1); self.rowconfigure(0, weight=1)
-        left = ttk.Frame(self); left.grid(row=0, column=0, sticky="nsw", padx=10, pady=10)
-        right= ttk.Frame(self); right.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
+        # Top bar for room controls
+        top_bar = ttk.Frame(self)
+        top_bar.pack(fill="x", padx=10, pady=(10, 5))
+
+        ttk.Label(top_bar, text="Cloud (Firebase)", font=("Segoe UI", 11, "bold")).pack(side="left", anchor="w")
+        self.cloud_lbl = ttk.Label(top_bar, text=f"UID: {self.fb.local_uid[:6]}…")
+        self.cloud_lbl.pack(side="left", anchor="w", padx=(6, 12))
+        ttk.Button(top_bar, text="เปลี่ยนห้อง", command=self.open_room_picker).pack(side="left")
+        ttk.Button(top_bar, text="เชิญเพื่อนเข้าห้อง", command=self.invite_member).pack(side="left", padx=4)
+        ttk.Button(top_bar, text="คัดลอกรหัสห้อง", command=self.copy_room_id).pack(side="left")
+        ttk.Button(top_bar, text="ออกห้อง", command=self.leave_room).pack(side="left", padx=4)
+
+        # Main content area with Tabs
+        self.notebook = ttk.Notebook(self)
+        self.notebook.pack(fill="both", expand=True, padx=10, pady=(5, 10))
+
+        bill_tab = ttk.Frame(self.notebook); self.notebook.add(bill_tab, text="💰 หารบิล")
+        sw_tab = ttk.Frame(self.notebook); self.notebook.add(sw_tab, text="🏆 เป้าหมายเล็กๆ (Small Wins)")
+        
+        self._build_bill_tab(bill_tab)
+        self._build_small_wins_tab(sw_tab)
+
+    def _build_bill_tab(self, parent):
+        parent.columnconfigure(0, weight=0); parent.columnconfigure(1, weight=1); parent.rowconfigure(0, weight=1)
+        left = ttk.Frame(parent); left.grid(row=0, column=0, sticky="nsw", padx=10, pady=10)
+        right= ttk.Frame(parent); right.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
         right.rowconfigure(1, weight=1); right.columnconfigure(0, weight=1)
-
-        ttk.Label(left, text="Cloud (Firebase)", font=("Segoe UI", 11, "bold")).grid(row=0, column=0, columnspan=3, sticky="w")
-        self.cloud_lbl = ttk.Label(left, text=f"UID: {self.fb.local_uid[:6]}…")
-        self.cloud_lbl.grid(row=1, column=0, sticky="w", pady=(0,4))
-        ttk.Button(left, text="เชิญเพื่อนเข้าห้อง", command=self.invite_member).grid(row=1, column=1, padx=4)
-        ttk.Button(left, text="เปลี่ยนห้อง", command=self.open_room_picker).grid(row=1, column=2)
-
-        # แถวปุ่มเสริมของห้อง
-        room_aux = ttk.Frame(left)
-        room_aux.grid(row=2, column=0, columnspan=3, sticky="we", pady=(4, 8))
-        ttk.Button(room_aux, text="คัดลอกรหัสห้อง", command=self.copy_room_id).pack(side="left")
-        ttk.Button(room_aux, text="ออกห้อง", command=self.leave_room).pack(side="left", padx=6)
 
         ttk.Label(left, text="รายชื่อเพื่อน (UID)", font=("Segoe UI", 11, "bold")).grid(row=3, column=0, columnspan=3, sticky="w", pady=(10,0))
         self.person_entry = ttk.Entry(left, width=22); self.person_entry.grid(row=4, column=0, sticky="w")
@@ -603,7 +621,62 @@ class BillSplitApp(ttk.Frame):
         ttk.Label(right, text="สรุปผล", font=("Segoe UI", 11, "bold")).grid(row=2, column=0, sticky="w", pady=(10,0))
         self.output = tk.Text(right, height=12); self.output.grid(row=3, column=0, sticky="nsew")
 
-    # ---------- Room choosing (NEW) ----------
+    def _build_small_wins_tab(self, parent):
+        parent.columnconfigure(0, weight=1); parent.rowconfigure(1, weight=1)
+
+        # --- Top frame for creating new goals ---
+        add_frame = ttk.LabelFrame(parent, text="ตั้งเป้าหมายใหม่ของฉัน", padding=10)
+        add_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
+        add_frame.columnconfigure(0, weight=1)
+
+        ttk.Label(add_frame, text="เป้าหมาย:").grid(row=0, column=0, sticky="w")
+        self.sw_goal_text = ttk.Entry(add_frame)
+        self.sw_goal_text.grid(row=1, column=0, sticky="ew", pady=(0, 5))
+
+        ttk.Label(add_frame, text="ทำให้สำเร็จใน (วัน):").grid(row=0, column=1, sticky="w", padx=(10, 0))
+        self.sw_deadline_days = ttk.Entry(add_frame, width=10)
+        self.sw_deadline_days.grid(row=1, column=1, sticky="w", padx=(10, 5))
+
+        ttk.Button(add_frame, text="ตั้งเป้าหมาย", command=self.add_small_win).grid(row=1, column=2)
+
+        # --- Main frame for displaying goals ---
+        main_frame = ttk.Frame(parent)
+        main_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=0)
+        main_frame.rowconfigure(0, weight=1); main_frame.columnconfigure(0, weight=1)
+
+        self.sw_cols = ("goal", "owner", "deadline", "nudges", "goal_id", "owner_uid")
+        self.sw_table = ttk.Treeview(main_frame, columns=self.sw_cols, show="headings", selectmode="browse")
+        
+        heads = {"goal":"เป้าหมาย (Goal)", "owner":"เจ้าของ", "deadline":"เดดไลน์", "nudges":"จำนวนสะกิด"}
+        widths= {"goal":500, "owner":150, "deadline":150, "nudges":100}
+        
+        for col, head in heads.items():
+            self.sw_table.heading(col, text=head)
+            self.sw_table.column(col, width=widths[col], stretch=True)
+
+        # Hide internal data columns
+        self.sw_table.column("goal_id", width=0, stretch=False)
+        self.sw_table.column("owner_uid", width=0, stretch=False)
+
+        self.sw_table.grid(row=0, column=0, sticky="nsew")
+        sw_scr = ttk.Scrollbar(main_frame, orient=tk.VERTICAL, command=self.sw_table.yview)
+        self.sw_table.configure(yscrollcommand=sw_scr.set)
+        sw_scr.grid(row=0, column=1, sticky="ns")
+        
+        self.sw_table.bind("<<TreeviewSelect>>", self.on_goal_select)
+
+        # --- Bottom frame for actions ---
+        action_frame = ttk.Frame(parent)
+        action_frame.grid(row=2, column=0, sticky="ew", padx=10, pady=10)
+        
+        self.sw_nudge_btn = ttk.Button(action_frame, text="👉 สะกิดเพื่อน (Nudge)", command=self.nudge_selected_goal, state="disabled")
+        self.sw_nudge_btn.pack(side="left")
+        
+        self.sw_delete_btn = ttk.Button(action_frame, text="🗑️ ลบเป้าหมายของฉัน", command=self.delete_selected_goal, state="disabled")
+        self.sw_delete_btn.pack(side="left", padx=10)
+
+
+    # ---------- Room choosing ----------
     def open_room_picker(self):
         """เปิดป๊อปอัพเลือกห้อง: สร้าง/เข้าห้อง ด้วยการกดปุ่ม"""
         RoomPickerDialog(self, self.fb, on_pick=self._pick_room, on_create=self._create_room)
@@ -616,7 +689,7 @@ class BillSplitApp(ttk.Frame):
             self.room_id = room_id
             owner = self.fb.get_room_owner(room_id)
             role = "owner" if owner == self.fb.local_uid else "member"
-            self.cloud_lbl.config(text=f"สถานะ: {role} • room {room_id}")
+            self.cloud_lbl.config(text=f"สถานะ: {role} • Room: {room_id}")
             self.bind_room(room_id)
         except Exception as e:
             messagebox.showerror("ผิดพลาด", str(e))
@@ -625,7 +698,7 @@ class BillSplitApp(ttk.Frame):
         try:
             rid = self.fb.create_room()
             self.room_id = rid
-            self.cloud_lbl.config(text=f"สถานะ: owner • room {rid}")
+            self.cloud_lbl.config(text=f"สถานะ: owner • Room: {rid}")
             self.bind_room(rid)
             return rid
         except Exception as e:
@@ -647,12 +720,13 @@ class BillSplitApp(ttk.Frame):
             self.room_id = None
             self.bill = Bill()
             self._render_all_from_bill()
+            self._render_small_wins(None)
             self.cloud_lbl.config(text=f"UID: {self.fb.local_uid[:6]}… (ยังไม่อยู่ในห้อง)")
         except Exception:
             pass
 
     def bind_room(self, room_id: str):
-        # โหลดข้อมูล + bind stream
+        # Bind Bills data
         try:
             if not self.fb.is_member(room_id):
                 messagebox.showerror("สิทธิ์ไม่พอ","คุณไม่ได้เป็นสมาชิกห้องนี้"); return
@@ -661,9 +735,9 @@ class BillSplitApp(ttk.Frame):
                 self.bill = Bill.from_dict(data); self._render_all_from_bill()
                 if isinstance(data, dict): self._last_remote_ua = data.get("updatedAt")
         except Exception as e:
-            messagebox.showerror("Firebase", f"โหลดห้องไม่สำเร็จ: {e}")
+            messagebox.showerror("Firebase", f"โหลดข้อมูลบิลไม่สำเร็จ: {e}")
 
-        def on_event(_ev):
+        def on_bill_event(_ev):
             if self._local_change: return
             try:
                 full = self.fb.get(f"bills/{room_id}")
@@ -677,11 +751,26 @@ class BillSplitApp(ttk.Frame):
                 self._last_remote_ua = ua; self.bill = new_bill; self._render_all_from_bill()
             self.after(0, apply)
 
+        # Bind Small Wins data
+        def on_sw_event(ev):
+            if self._local_change: return # ✅ ป้องกัน re-render จาก action ของตัวเอง
+            # Event เป็นแค่ตัวกระตุ้น เราจะ fetch ข้อมูลทั้งหมดมาใหม่เสมอเพื่อความแน่นอน
+            try:
+                full_sw_data = self.fb.get(f"small_wins/{self.room_id}")
+            except Exception:
+                return # ถ้า fetch พลาดก็ไม่ต้องทำอะไร
+            
+            self.after(0, lambda: self._render_small_wins(full_sw_data))
+
         try:
-            self.fb.stream(f"bills/{room_id}", on_event)
-        except Exception:
-            pass
-        self.after(3000, self._keep_synced)
+            self.fb.stream(f"bills/{room_id}", on_bill_event)
+            self.fb.stream(f"small_wins/{room_id}", on_sw_event)
+            # Initial load for small wins
+            sw_data = self.fb.get(f"small_wins/{room_id}")
+            self._render_small_wins(sw_data)
+        except Exception as e:
+            print(f"Error starting stream: {e}")
+
 
     # ---------- Room Invite (owner only) ----------
     def invite_member(self):
@@ -713,11 +802,15 @@ class BillSplitApp(ttk.Frame):
     def _label_for(self, uid: str) -> str:
         if uid in self.name_cache: return self.name_cache[uid]
         label = uid[:6]
-        prof = self.fb.get_profile(uid)
-        if prof: label = prof.get("username") or prof.get("displayName") or label
+        try:
+            prof = self.fb.get_profile(uid)
+            if prof: label = prof.get("username") or prof.get("displayName") or label
+        except Exception:
+            pass # Use default label if profile fetch fails
         self.name_cache[uid] = label
         return label
 
+    # ---------- Bill Splitting Logic ----------
     def _refresh_people_widgets(self):
         self.people_uids = list(self.bill.people.keys())
         labels=[]; self.label2uid={}
@@ -796,7 +889,6 @@ class BillSplitApp(ttk.Frame):
         for pos, rid in enumerate(parents): self.table.move(rid,"",pos)
         self._apply_zebra()
 
-    # ---------- Sync ----------
     def _push_bill(self):
         if not self.room_id: return
         try:
@@ -809,18 +901,6 @@ class BillSplitApp(ttk.Frame):
     def _render_all_from_bill(self):
         self._refresh_people_widgets(); self._rebuild_table(); self.refresh_summary()
 
-    def _keep_synced(self):
-        if self.room_id and not self._local_change:
-            try:
-                full = self.fb.get(f"bills/{self.room_id}")
-                if isinstance(full, dict):
-                    ua = full.get("updatedAt")
-                    if ua is not None and ua != self._last_remote_ua:
-                        self._last_remote_ua = ua; self.bill = Bill.from_dict(full); self._render_all_from_bill()
-            except: pass
-        self.after(3000, self._keep_synced)
-
-    # ---------- Events ----------
     def add_person(self):
         key = self.person_entry.get().strip()
         if not key: messagebox.showwarning("เตือน","กรอก UID หรือ username"); return
@@ -926,6 +1006,141 @@ class BillSplitApp(ttk.Frame):
             for t in txs:
                 self.output.insert(tk.END, f"  - {self._label_for(t['from'])} → {self._label_for(t['to'])}: {money(t['amount'])}\n")
 
+    # ---------- Small Wins Logic (NEW) ----------
+    def _render_small_wins(self, goals_data: Optional[Dict]):
+        self.sw_table.delete(*self.sw_table.get_children())
+        if not goals_data or not isinstance(goals_data, dict):
+            return
+            
+        sorted_goals = sorted(goals_data.items(), key=lambda item: item[1].get('createdAt', 0), reverse=True)
+
+        for goal_id, goal in sorted_goals:
+            owner_uid = goal.get("ownerUid", "N/A")
+            owner_name = self._label_for(owner_uid)
+            
+            deadline_ts = goal.get("deadline", 0)
+            deadline_str = datetime.fromtimestamp(deadline_ts).strftime('%Y-%m-%d %H:%M') if deadline_ts > 0 else "N/A"
+            
+            nudges = goal.get("nudges", {})
+            nudge_count = len(nudges) if isinstance(nudges, dict) else 0
+
+            row_values = (
+                goal.get("goalText", ""),
+                owner_name,
+                deadline_str,
+                nudge_count,
+                goal_id,
+                owner_uid
+            )
+            self.sw_table.insert("", "end", values=row_values)
+        
+        self.on_goal_select(None) # Update button states
+
+    def add_small_win(self):
+        if not self.room_id:
+            messagebox.showwarning("เตือน", "กรุณาเลือกห้องก่อน"); return
+
+        goal_text = self.sw_goal_text.get().strip()
+        if not goal_text:
+            messagebox.showwarning("เตือน", "กรุณาใส่ข้อความเป้าหมาย"); return
+
+        try:
+            days = int(self.sw_deadline_days.get().strip())
+            if days <= 0: raise ValueError
+        except (ValueError, TypeError):
+            messagebox.showwarning("เตือน", "กรุณาใส่จำนวนวันเป็นตัวเลขที่มากกว่า 0"); return
+
+        deadline_dt = datetime.now() + timedelta(days=days)
+        deadline_ts = int(deadline_dt.timestamp())
+
+        payload = {
+            "goalText": goal_text,
+            "ownerUid": self.fb.local_uid,
+            "createdAt": int(time.time()),
+            "deadline": deadline_ts,
+            "nudges": {}
+        }
+        try:
+            self._local_change = True
+            self.fb.post(f"small_wins/{self.room_id}", payload)
+            self.sw_goal_text.delete(0, tk.END)
+            self.sw_deadline_days.delete(0, tk.END)
+        except Exception as e:
+            messagebox.showerror("ผิดพลาด", f"ไม่สามารถสร้างเป้าหมายได้: {e}")
+        finally:
+            self.after(300, lambda: setattr(self, "_local_change", False))
+
+    def on_goal_select(self, event):
+        sel = self.sw_table.selection()
+        if not sel:
+            self.sw_nudge_btn.config(state="disabled")
+            self.sw_delete_btn.config(state="disabled")
+            return
+
+        item = self.sw_table.item(sel[0])
+        values = item['values']
+        if not values: return
+
+        # Find owner_uid from the hidden column
+        owner_uid_idx = self.sw_cols.index("owner_uid")
+        owner_uid = values[owner_uid_idx]
+
+        is_my_goal = (owner_uid == self.fb.local_uid)
+        
+        self.sw_delete_btn.config(state="normal" if is_my_goal else "disabled")
+        self.sw_nudge_btn.config(state="disabled" if is_my_goal else "normal")
+
+    def get_selected_goal_info(self) -> Optional[Dict]:
+        sel = self.sw_table.selection()
+        if not sel: return None
+        
+        item = self.sw_table.item(sel[0])
+        values = item['values']
+        if not values: return None
+        
+        goal_id_idx = self.sw_cols.index("goal_id")
+        owner_uid_idx = self.sw_cols.index("owner_uid")
+
+        return {
+            "id": values[goal_id_idx],
+            "owner_uid": values[owner_uid_idx]
+        }
+        
+    def nudge_selected_goal(self):
+        if not self.room_id: return
+        info = self.get_selected_goal_info()
+        if not info:
+            messagebox.showinfo("แจ้ง", "กรุณาเลือกเป้าหมายที่จะสะกิด"); return
+        
+        goal_id = info["id"]
+        path = f"small_wins/{self.room_id}/{goal_id}/nudges/{self.fb.local_uid}"
+        try:
+            self._local_change = True
+            self.fb.put(path, int(time.time()))
+            messagebox.showinfo("สำเร็จ", "ส่งสะกิดให้เพื่อนแล้ว!")
+        except Exception as e:
+            messagebox.showerror("ผิดพลาด", f"ไม่สามารถสะกิดได้: {e}")
+        finally:
+            self.after(300, lambda: setattr(self, "_local_change", False))
+            
+    def delete_selected_goal(self):
+        if not self.room_id: return
+        info = self.get_selected_goal_info()
+        if not info:
+            messagebox.showinfo("แจ้ง", "กรุณาเลือกเป้าหมายที่จะลบ"); return
+        
+        if not messagebox.askyesno("ยืนยัน", "แน่ใจว่าจะลบเป้าหมายนี้?"):
+            return
+            
+        goal_id = info["id"]
+        path = f"small_wins/{self.room_id}/{goal_id}"
+        try:
+            self._local_change = True
+            self.fb.delete(path)
+        except Exception as e:
+            messagebox.showerror("ผิดพลาด", f"ไม่สามารถลบได้: {e}")
+        finally:
+            self.after(300, lambda: setattr(self, "_local_change", False))
 
 # =====================
 # App bootstrap
@@ -933,7 +1148,14 @@ class BillSplitApp(ttk.Frame):
 def main():
     root = tk.Tk()
     try:
-        root.call("source","azure.tcl"); ttk.Style().theme_use("azure")
+        # Use a modern theme if available
+        style = ttk.Style(root)
+        if "azure" in style.theme_names():
+            style.theme_use("azure")
+            style.configure("TNotebook.Tab", padding=[10, 5], font=("Segoe UI", 10))
+            style.configure("Treeview.Heading", font=("Segoe UI", 10, "bold"))
+        elif "clam" in style.theme_names():
+            style.theme_use("clam")
     except Exception:
         pass
 
@@ -948,4 +1170,4 @@ def main():
 
 if __name__ == "__main__":
     main()
- 
+
