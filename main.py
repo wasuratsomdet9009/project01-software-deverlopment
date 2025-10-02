@@ -285,8 +285,12 @@ class FirebaseRTClient:
         })
         # ดัชนีห้องของผู้ใช้
         self.patch(f"rooms_by_user/{self.local_uid}", { room_id: True })
-        # สร้างบิลว่าง (ครั้งแรก)
-        self.put(f"bills/{room_id}", Bill().to_dict())
+        
+        # ✅ [FIX] สร้างบิล (ครั้งแรก) พร้อมกับเพิ่ม owner เข้าไปในรายชื่อ people
+        initial_bill = Bill()
+        initial_bill.add_person(self.local_uid)
+        self.put(f"bills/{room_id}", initial_bill.to_dict())
+
         # สร้าง small_wins ว่าง (ครั้งแรก)
         self.put(f"small_wins/{room_id}", {})
         return room_id
@@ -898,8 +902,18 @@ class BillSplitApp(ttk.Frame):
         finally:
             self.after(300, lambda: setattr(self, "_local_change", False))
 
+    def _render_config_vars(self):
+        """ ✅ [NEW] อัปเดตค่าในช่องกรอก Service/VAT/Tip จากข้อมูล Bill ปัจจุบัน """
+        self.service_var.set(f"{self.bill.service_pct:g}")
+        self.vat_var.set(f"{self.bill.vat_pct:g}")
+        self.tip_var.set(f"{self.bill.tip:g}")
+
     def _render_all_from_bill(self):
-        self._refresh_people_widgets(); self._rebuild_table(); self.refresh_summary()
+        """ ✅ [UPDATE] แก้ไขให้ render ทุกส่วนของ UI ที่เกี่ยวกับบิล """
+        self._render_config_vars()
+        self._refresh_people_widgets()
+        self._rebuild_table()
+        self.refresh_summary()
 
     def add_person(self):
         key = self.person_entry.get().strip()
@@ -912,7 +926,7 @@ class BillSplitApp(ttk.Frame):
         try:
             self.bill.add_person(uid); self.person_entry.delete(0,tk.END)
             self.name_cache[uid] = self._label_for(uid)
-            self._refresh_people_widgets(); self._push_bill()
+            self._render_all_from_bill(); self._push_bill() # ✅ [FIX] เรียก render ทั้งหมด
         except Exception as e:
             messagebox.showerror("ผิดพลาด", str(e))
 
@@ -921,7 +935,7 @@ class BillSplitApp(ttk.Frame):
         if not sel: messagebox.showinfo("แจ้ง","เลือกเพื่อนก่อน"); return
         uid = self.people_uids[sel[0]]
         try:
-            self.bill.remove_person(uid); self._refresh_people_widgets(); self._push_bill()
+            self.bill.remove_person(uid); self._render_all_from_bill(); self._push_bill() # ✅ [FIX] เรียก render ทั้งหมด
         except Exception as e:
             messagebox.showerror("ลบไม่ได้", str(e))
 
@@ -1170,4 +1184,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
