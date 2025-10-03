@@ -1,19 +1,5 @@
-<<<<<<< Updated upstream
-'''
-<<<<<<< Updated upstream
 # split_bill_all_in_one_login_separated.py
-=======
-=======
->>>>>>> Stashed changes
-<<<<<<< HEAD
-=======
-# split_bill_all_in_one_login_separated.py
->>>>>>> 2a106603506b8521e792f796a64e5c252d7d572a
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-'''
-=======
->>>>>>> Stashed changes
+
 # ------------------------------------------------------------
 # ✓ หน้า Login แยกจากหน้าใช้งาน
 # ✓ Firebase Auth (Email/Password) + Username + Public profile
@@ -22,7 +8,6 @@
 # ✓ Room Picker แบบป๊อปอัพ (สร้าง/เลือกห้องด้วยปุ่ม)
 # ✓ RTDB streaming (SSE) + polling สำรอง
 # ✓ เก็บ payer/participants เป็น UID แต่แสดงเป็น username
-# ✓ ตัดปุ่ม Save/Load JSON และ Export CSV ออก
 # ✓ เพิ่มฟีเจอร์ Small Wins (เป้าหมายเล็กๆ)
 # ------------------------------------------------------------
 
@@ -56,19 +41,10 @@ class Person:
 class Item:
     name: str
     price: float
-
-
     payer: str              # UID
     participants: List[str] # [UID]
     weights: Optional[Dict[str, float]] = None  # {UID: weight}
 
-    payer: str               # UID ผู้จ่ายก่อน
-    participants: List[str]    # รายชื่อ UID ผู้ร่วมกิน
-    weights: Optional[Dict[str, float]] = None  # key ต้องเป็น UID
-
-    payer: str              # UID
-    participants: List[str] # [UID]
-    weights: Optional[Dict[str, float]] = None  # {UID: weight}
 @dataclass
 class Bill:
     people: Dict[str, Person] = field(default_factory=dict)
@@ -171,42 +147,10 @@ class Bill:
 
     def to_dict(self):
         return {
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
-=======
->>>>>>> Stashed changes
-<<<<<<< HEAD
-            "people": list(self.people.keys()),  # list of UIDs
-            "items": [
-                {
-                    "name": it.name,
-                    "price": it.price,
-                    "payer": it.payer,                      # UID
-                    "participants": it.participants,        # [UID]
-                    "weights": it.weights,                  # {UID: w}
-                } for it in self.items
-            ],
-            "service_pct": self.service_pct,
-            "vat_pct": self.vat_pct,
-            "tip": self.tip,
-=======
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
             "people": list(self.people.keys()),
             "items": [{"name":it.name,"price":it.price,"payer":it.payer,
                        "participants":it.participants,"weights":it.weights} for it in self.items],
             "service_pct": self.service_pct, "vat_pct": self.vat_pct, "tip": self.tip,
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
->>>>>>> 2a106603506b8521e792f796a64e5c252d7d572a
->>>>>>> Stashed changes
-=======
->>>>>>> 2a106603506b8521e792f796a64e5c252d7d572a
->>>>>>> Stashed changes
             "updatedAt": time.time(),
         }
 
@@ -296,11 +240,10 @@ class FirebaseRTClient:
         url=f"{self.rtdb_url}/{path}.json"; r=requests.put(url, params=self._auth(), json=obj, timeout=30); r.raise_for_status(); return r.json()
     def patch(self, path:str, obj):
         url=f"{self.rtdb_url}/{path}.json"; r=requests.patch(url, params=self._auth(), json=obj, timeout=30); r.raise_for_status(); return r.json()
-    def post(self, path:str, obj): # NEW
+    def post(self, path:str, obj):
         url=f"{self.rtdb_url}/{path}.json"; r=requests.post(url, params=self._auth(), json=obj, timeout=30); r.raise_for_status(); return r.json()
-    def delete(self, path:str): # NEW
+    def delete(self, path:str):
         url=f"{self.rtdb_url}/{path}.json"; r=requests.delete(url, params=self._auth(), timeout=30); r.raise_for_status(); return r.json()
-
 
     # ---------- Username / Profile ----------
     @staticmethod
@@ -333,16 +276,14 @@ class FirebaseRTClient:
     def create_room(self) -> str:
         room_id = self.gen_room_id()
         now = int(time.time())
-        # โครงสร้างห้อง
         self.put(f"rooms/{room_id}", {
             "ownerUid": self.local_uid,
             "createdAt": now,
             "members": { self.local_uid: {"role": "owner", "invitedBy": self.local_uid, "joinedAt": now} },
         })
-        # ดัชนีห้องของผู้ใช้
         self.patch(f"rooms_by_user/{self.local_uid}", { room_id: True })
         
-        # ✅ [FIX] สร้างบิล (ครั้งแรก) พร้อมกับเพิ่ม owner เข้าไปในรายชื่อ people
+        # สร้างบิล (ครั้งแรก) พร้อมกับเพิ่ม owner เข้าไปในรายชื่อ people
         initial_bill = Bill()
         initial_bill.add_person(self.local_uid)
         self.put(f"bills/{room_id}", initial_bill.to_dict())
@@ -408,7 +349,7 @@ class FirebaseRTClient:
 
 
 # =====================
-# Room Picker Dialog (NEW)
+# Room Picker Dialog
 # =====================
 class RoomPickerDialog(tk.Toplevel):
     """หน้าต่างเลือกห้องจาก rooms_by_user/<uid> พร้อมปุ่มสร้าง/เข้า/คัดลอก"""
@@ -454,7 +395,7 @@ class RoomPickerDialog(tk.Toplevel):
     def _selected_room(self) -> Optional[str]:
         sel = self.listbox.curselection()
         if not sel: return None
-        text = self.listbox.get(sel[0])  # "R-XXXXXXX   (owner)"
+        text = self.listbox.get(sel[0])
         return text.split()[0]
 
     def _enter(self):
@@ -729,10 +670,10 @@ class BillSplitApp(ttk.Frame):
         action_frame = ttk.Frame(parent)
         action_frame.grid(row=2, column=0, sticky="ew", padx=10, pady=10)
         
-        self.sw_nudge_btn = ttk.Button(action_frame, text="👉 สะกิดเพื่อน (Nudge)", command=self.nudge_selected_goal, state="disabled")
+        self.sw_nudge_btn = ttk.Button(action_frame, text="สะกิดเพื่อน (Nudge)", command=self.nudge_selected_goal, state="disabled")
         self.sw_nudge_btn.pack(side="left")
         
-        self.sw_delete_btn = ttk.Button(action_frame, text="🗑️ ลบเป้าหมายของฉัน", command=self.delete_selected_goal, state="disabled")
+        self.sw_delete_btn = ttk.Button(action_frame, text="ลบเป้าหมายของฉัน", command=self.delete_selected_goal, state="disabled")
         self.sw_delete_btn.pack(side="left", padx=10)
 
 
@@ -813,12 +754,11 @@ class BillSplitApp(ttk.Frame):
 
         # Bind Small Wins data
         def on_sw_event(ev):
-            if self._local_change: return # ✅ ป้องกัน re-render จาก action ของตัวเอง
-            # Event เป็นแค่ตัวกระตุ้น เราจะ fetch ข้อมูลทั้งหมดมาใหม่เสมอเพื่อความแน่นอน
+            if self._local_change: return
             try:
                 full_sw_data = self.fb.get(f"small_wins/{self.room_id}")
             except Exception:
-                return # ถ้า fetch พลาดก็ไม่ต้องทำอะไร
+                return
             
             self.after(0, lambda: self._render_small_wins(full_sw_data))
 
@@ -866,7 +806,7 @@ class BillSplitApp(ttk.Frame):
             prof = self.fb.get_profile(uid)
             if prof: label = prof.get("username") or prof.get("displayName") or label
         except Exception:
-            pass # Use default label if profile fetch fails
+            pass
         self.name_cache[uid] = label
         return label
 
@@ -959,20 +899,18 @@ class BillSplitApp(ttk.Frame):
             self.after(300, lambda: setattr(self, "_local_change", False))
 
     def _render_config_vars(self):
-        """ ✅ [NEW] อัปเดตค่าในช่องกรอก Service/VAT/Tip จากข้อมูล Bill ปัจจุบัน """
+        """อัปเดตค่าในช่องกรอก Service/VAT/Tip จากข้อมูล Bill ปัจจุบัน"""
         self.service_var.set(f"{self.bill.service_pct:g}")
         self.vat_var.set(f"{self.bill.vat_pct:g}")
         self.tip_var.set(f"{self.bill.tip:g}")
 
     def _render_all_from_bill(self):
-        """ ✅ [UPDATE] แก้ไขให้ render ทุกส่วนของ UI ที่เกี่ยวกับบิล """
+        """แก้ไขให้ render ทุกส่วนของ UI ที่เกี่ยวกับบิล"""
         self._render_config_vars()
         self._refresh_people_widgets()
         self._rebuild_table()
         self.refresh_summary()
 
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
     def add_person(self):
         key = self.person_entry.get().strip()
         if not key: messagebox.showwarning("เตือน","กรอก UID หรือ username"); return
@@ -984,7 +922,7 @@ class BillSplitApp(ttk.Frame):
         try:
             self.bill.add_person(uid); self.person_entry.delete(0,tk.END)
             self.name_cache[uid] = self._label_for(uid)
-            self._render_all_from_bill(); self._push_bill() # ✅ [FIX] เรียก render ทั้งหมด
+            self._render_all_from_bill(); self._push_bill()
         except Exception as e:
             messagebox.showerror("ผิดพลาด", str(e))
 
@@ -993,245 +931,13 @@ class BillSplitApp(ttk.Frame):
         if not sel: messagebox.showinfo("แจ้ง","เลือกเพื่อนก่อน"); return
         uid = self.people_uids[sel[0]]
         try:
-            self.bill.remove_person(uid); self._render_all_from_bill(); self._push_bill() # ✅ [FIX] เรียก render ทั้งหมด
+            self.bill.remove_person(uid); self._render_all_from_bill(); self._push_bill()
         except Exception as e:
             messagebox.showerror("ลบไม่ได้", str(e))
 
     def update_config(self):
         def f(s): s=(s or "0").strip(); return float(s) if s else 0.0
         try:
-=======
-=======
->>>>>>> Stashed changes
-<<<<<<< HEAD
-    def _keep_synced(self):
-        if self.fb and self.room_id and not self._local_change:
-            try:
-                full = self.fb.get(f"bills/{self.room_id}")
-                if isinstance(full, dict):
-                    ua = full.get("updatedAt")
-                    if ua is not None and ua != self._last_remote_ua:
-                        self._last_remote_ua = ua
-                        self.bill = Bill.from_dict(full)
-                        self._render_all_from_bill()
-            except Exception:
-                pass
-        self.after(3000, self._keep_synced)
-
-    # ---------- NEW: Local Save/Load & Export Handlers ----------
-    def save_bill_local(self):
-        try:
-            fpath = filedialog.asksaveasfilename(
-                title="บันทึกบิลเป็น JSON",
-                filetypes=[("JSON files", "*.json")],
-                defaultextension=".json",
-                initialfile=f"bill-{self.room_id or 'local'}.json"
-            )
-            if not fpath:
-                return
-            with open(fpath, "w", encoding="utf-8") as f:
-                json.dump(self.bill.to_dict(), f, indent=2, ensure_ascii=False)
-            messagebox.showinfo("สำเร็จ", f"บันทึกบิลแล้วที่:\n{fpath}")
-        except Exception as e:
-            messagebox.showerror("ผิดพลาด", f"ไม่สามารถบันทึกไฟล์ได้: {e}")
-
-    def load_bill_local(self):
-        try:
-            fpath = filedialog.askopenfilename(
-                title="เปิดไฟล์บิล JSON",
-                filetypes=[("JSON files", "*.json")]
-            )
-            if not fpath:
-                return
-            with open(fpath, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            
-            self.bill = Bill.from_dict(data)
-            self._render_all_from_bill()
-            messagebox.showinfo("สำเร็จ", "โหลดบิลเรียบร้อยแล้ว")
-
-            if self.fb and self.room_id:
-                if messagebox.askyesno("Cloud Sync", "ต้องการอัปโหลดบิลนี้ขึ้น Cloud หรือไม่? (จะเขียนทับข้อมูลในห้องปัจจุบัน)"):
-                    self._push_bill()
-
-        except Exception as e:
-            messagebox.showerror("ผิดพลาด", f"ไม่สามารถโหลดไฟล์ได้: {e}")
-
-    def export_transfers_csv(self):
-        try:
-            txs = self.bill.settle_transactions()
-            if not txs:
-                messagebox.showinfo("Export", "ไม่มีรายการโอนเงินที่ต้องชำระ")
-                return
-
-            fpath = filedialog.asksaveasfilename(
-                title="Export รายการโอนเป็น CSV",
-                filetypes=[("CSV files", "*.csv")],
-                defaultextension=".csv",
-                initialfile=f"transfers-{self.room_id or 'local'}.csv"
-            )
-            if not fpath:
-                return
-
-            with open(fpath, "w", encoding="utf-8", newline="") as f:
-                writer = csv.writer(f)
-                writer.writerow(["From (ผู้โอน)", "To (ผู้รับ)", "Amount (จำนวนเงิน)"])
-                for tx in txs:
-                    from_name = self._label_for(tx['from'])
-                    to_name = self._label_for(tx['to'])
-                    writer.writerow([from_name, to_name, f"{tx['amount']:.2f}"])
-            
-            messagebox.showinfo("สำเร็จ", f"Export รายการโอนแล้วที่:\n{fpath}")
-        except Exception as e:
-            messagebox.showerror("ผิดพลาด", f"ไม่สามารถ Export CSV ได้: {e}")
-    
-    def reset_all(self):
-        if not messagebox.askyesno("ยืนยัน", "ต้องการล้างข้อมูลบิลทั้งหมดหรือไม่?"):
-            return
-        self.bill = Bill()
-        self._render_all_from_bill()
-        self._push_bill()
-        messagebox.showinfo("สำเร็จ", "ล้างข้อมูลทั้งหมดแล้ว")
-
-    # ---------- NEW: Action Handlers ----------
-    def add_person(self):
-        name_or_uid = self.person_entry.get().strip()
-        if not name_or_uid: return
-
-        uid_to_add = None
-        try:
-            # Try as username first if connected
-            if self.fb and "@" not in name_or_uid:
-                try:
-                    uid = self.fb.uid_from_username(name_or_uid)
-                    if uid:
-                        uid_to_add = uid
-                except Exception:
-                    pass # Not found, maybe it's a UID
-            
-            if not uid_to_add:
-                uid_to_add = name_or_uid # Assume it's a UID
-
-            self.bill.add_person(uid_to_add)
-            self._refresh_people_widgets()
-            self._push_bill()
-            self.person_entry.delete(0, tk.END)
-
-        except ValueError as e:
-=======
-    def add_person(self):
-        key = self.person_entry.get().strip()
-        if not key: messagebox.showwarning("เตือน","กรอก UID หรือ username"); return
-        uid = None
-        try: uid = self.fb.uid_from_username(key) if len(key)<28 else key
-        except: uid=None
-        if not uid:
-            messagebox.showerror("ไม่พบ", f"ไม่พบ username: {key} หรือ UID สั้นเกินไป"); return
-        try:
-            self.bill.add_person(uid); self.person_entry.delete(0,tk.END)
-            self.name_cache[uid] = self._label_for(uid)
-            self._render_all_from_bill(); self._push_bill() # ✅ [FIX] เรียก render ทั้งหมด
-        except Exception as e:
->>>>>>> 2a106603506b8521e792f796a64e5c252d7d572a
-            messagebox.showerror("ผิดพลาด", str(e))
-        except Exception as e:
-            messagebox.showerror("ผิดพลาด", f"ไม่สามารถเพิ่มได้ (อาจเป็น username ที่ไม่มีอยู่): {e}")
-
-    def remove_person(self):
-<<<<<<< HEAD
-        selections = self.people_list.curselection()
-        if not selections:
-            messagebox.showwarning("เลือก", "กรุณาเลือกชื่อที่ต้องการลบ")
-            return
-        
-        try:
-            uid_to_remove = self.people_uids[selections[0]]
-            self.bill.remove_person(uid_to_remove)
-            self._refresh_people_widgets()
-            self._rebuild_table()
-            self.refresh_summary()
-            self._push_bill()
-        except ValueError as e:
-=======
-        sel = self.people_list.curselection()
-        if not sel: messagebox.showinfo("แจ้ง","เลือกเพื่อนก่อน"); return
-        uid = self.people_uids[sel[0]]
-        try:
-            self.bill.remove_person(uid); self._render_all_from_bill(); self._push_bill() # ✅ [FIX] เรียก render ทั้งหมด
-        except Exception as e:
->>>>>>> 2a106603506b8521e792f796a64e5c252d7d572a
-            messagebox.showerror("ลบไม่ได้", str(e))
-        except Exception as e:
-            messagebox.showerror("ผิดพลาด", str(e))
-
-    def update_config(self):
-<<<<<<< HEAD
-        try:
-            self.bill.service_pct = float(self.service_var.get())
-            self.bill.vat_pct = float(self.vat_var.get())
-            self.bill.tip = float(self.tip_var.get())
-            self._rebuild_table()
-            self.refresh_summary()
-            self._push_bill()
-            messagebox.showinfo("สำเร็จ", "อัปเดตค่า Config แล้ว")
-        except ValueError:
-            messagebox.showerror("ผิดพลาด", "กรุณาใส่ตัวเลขที่ถูกต้องสำหรับ Service/VAT/Tip")
-
-    def add_item(self):
-        try:
-            name = self.item_name.get().strip()
-            if not name:
-                raise ValueError("กรุณาใส่ชื่อเมนู")
-            price = float(self.item_price.get())
-
-            payer_label = self.payer_combo.get()
-            if not payer_label:
-                raise ValueError("กรุณาเลือกผู้จ่ายเงิน")
-            payer_uid = self.label2uid[payer_label]
-            
-            participant_indices = self.participants_list.curselection()
-            if not participant_indices:
-                raise ValueError("กรุณาเลือกผู้ร่วมกินอย่างน้อย 1 คน")
-            participant_uids = [self.people_uids[i] for i in participant_indices]
-
-            weights = None
-            if self.use_weights.get():
-                weights = {}
-                for uid in participant_uids:
-                    label = self._label_for(uid)
-                    w_str = simpledialog.askstring("ระบุน้ำหนัก", f"ใส่น้ำหนัก (ตัวเลข) สำหรับ {label}:", parent=self)
-                    if w_str is None: return # User cancelled
-                    weights[uid] = float(w_str)
-            
-            new_item = Item(
-                name=name,
-                price=price,
-                payer=payer_uid,
-                participants=participant_uids,
-                weights=weights
-            )
-            self.bill.add_item(new_item)
-            self._rebuild_table()
-            self.refresh_summary()
-            self._push_bill()
-            
-            # Clear form
-            self.item_name.delete(0, tk.END)
-            self.item_price.delete(0, tk.END)
-            self.payer_combo.set("")
-            self.participants_list.selection_clear(0, tk.END)
-            self.use_weights.set(False)
-            self.all_var.set(False)
-
-        except ValueError as e:
-            messagebox.showerror("ข้อมูลไม่ถูกต้อง", str(e))
-=======
-        def f(s): s=(s or "0").strip(); return float(s) if s else 0.0
-        try:
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
             self.bill.service_pct = f(self.service_var.get())
             self.bill.vat_pct     = f(self.vat_var.get())
             self.bill.tip         = f(self.tip_var.get())
@@ -1271,51 +977,10 @@ class BillSplitApp(ttk.Frame):
             self.bill.add_item(Item(name=name, price=price, payer=payer_uid, participants=parts, weights=weights))
             self.item_name.delete(0,tk.END); self.item_price.delete(0,tk.END); self.use_weights.set(False)
             self._rebuild_table(); self.refresh_summary(); self._push_bill()
->>>>>>> 2a106603506b8521e792f796a64e5c252d7d572a
         except Exception as e:
             messagebox.showerror("ผิดพลาด", f"เกิดข้อผิดพลาด: {e}")
 
     def remove_selected_item(self):
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
-=======
->>>>>>> Stashed changes
-<<<<<<< HEAD
-        selections = self.table.selection()
-        if not selections:
-            messagebox.showwarning("เลือก", "กรุณาเลือกรายการที่ต้องการลบในตาราง")
-            return
-        
-        selected_id = selections[0]
-        try:
-            parent_id = self.table.parent(selected_id)
-            item_id_to_process = selected_id if not parent_id else parent_id
-            
-            item_values = self.table.item(item_id_to_process, "values")
-            item_name_from_table = item_values[self.table_cols.index("name")]
-            item_price_from_table = float(item_values[self.table_cols.index("price")].replace(",",""))
-            
-            original_index = -1
-            for i, item_in_bill in enumerate(self.bill.items):
-                 if item_in_bill.name == item_name_from_table and abs(item_in_bill.price - item_price_from_table) < 0.001:
-                     original_index = i
-                     break
-            
-            if original_index == -1:
-                raise IndexError("ไม่พบรายการที่ตรงกันในข้อมูลหลัก (อาจเกิดจากข้อมูลซ้ำซ้อน)")
-
-            self.bill.remove_item_at(original_index)
-            self._rebuild_table()
-            self.refresh_summary()
-            self._push_bill()
-        except Exception as e:
-            messagebox.showerror("ผิดพลาด", f"ไม่สามารถลบรายการได้: {e}")
-=======
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
         sel = self.table.selection()
         if not sel: messagebox.showinfo("แจ้ง","เลือกรายการก่อน"); return
         rid = sel[0]; parent = self.table.parent(rid) or rid
@@ -1323,14 +988,6 @@ class BillSplitApp(ttk.Frame):
         try: idx1 = int(vals[0])
         except: messagebox.showerror("ผิดพลาด","ไม่พบดัชนีรายการ"); return
         self.bill.remove_item_at(idx1-1); self._rebuild_table(); self.refresh_summary(); self._push_bill()
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
->>>>>>> 2a106603506b8521e792f796a64e5c252d7d572a
->>>>>>> Stashed changes
-=======
->>>>>>> 2a106603506b8521e792f796a64e5c252d7d572a
->>>>>>> Stashed changes
 
     def refresh_summary(self):
         self.output.delete("1.0", tk.END)
@@ -1338,63 +995,6 @@ class BillSplitApp(ttk.Frame):
             return
 
         try:
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
-=======
->>>>>>> Stashed changes
-<<<<<<< HEAD
-            sub, svc, vat, total = self.bill._totals()
-            costs = self.bill.summary_costs()
-            paid = self.bill.paid_map()
-            net = self.bill.net_balance()
-            txs = self.bill.settle_transactions()
-            
-            summary = []
-            summary.append(f"ยอดรวม (Subtotal): {sub:,.2f} บาท")
-            summary.append(f"Service Charge ({self.bill.service_pct:g}%): {svc:,.2f} บาท")
-            summary.append(f"VAT ({self.bill.vat_pct:g}%): {vat:,.2f} บาท")
-            summary.append(f"Tip: {self.bill.tip:,.2f} บาท")
-            summary.append("="*30)
-            summary.append(f"ยอดรวมทั้งหมด: {total:,.2f} บาท")
-            summary.append("="*30)
-            
-            summary.append("\n--- สรุปยอดของแต่ละคน ---")
-            for uid in sorted(self.bill.people.keys()):
-                label = self._label_for(uid)
-                summary.append(f"  - {label}:")
-                summary.append(f"    จ่ายไปแล้ว: {paid.get(uid, 0):,.2f} บาท")
-                summary.append(f"    ยอดที่ต้องจ่ายจริง: {costs.get(uid, 0):,.2f} บาท")
-                summary.append(f"    คงเหลือ (จ่ายเกิน/ขาด): {net.get(uid, 0):,.2f} บาท")
-
-            summary.append("\n--- รายการที่ต้องโอนเงิน ---")
-            if txs:
-                for tx in txs:
-                    f = self._label_for(tx['from'])
-                    t = self._label_for(tx['to'])
-                    a = tx['amount']
-                    summary.append(f"  {f} → โอนให้ {t} → {a:,.2f} บาท")
-            else:
-                summary.append("  (ไม่มี)")
-
-            self.output.insert("1.0", "\n".join(summary))
-        except Exception as e:
-            self.output.insert("1.0", f"เกิดข้อผิดพลาดในการคำนวณ: {e}")
-
-    def copy_summary(self):
-        summary_text = self.output.get("1.0", tk.END)
-        try:
-            self.clipboard_clear()
-            self.clipboard_append(summary_text)
-            messagebox.showinfo("คัดลอก", "คัดลอกสรุปผลไปยังคลิปบอร์ดแล้ว")
-        except tk.TclError:
-             messagebox.showwarning("คัดลอก", "ไม่สามารถเข้าถึงคลิปบอร์ดได้")
-
-=======
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
             subtotal, svc, vat, total = self.bill._totals()
             should = self.bill.summary_costs(); paid = self.bill.paid_map()
             net = self.bill.net_balance(); txs = self.bill.settle_transactions()
@@ -1420,7 +1020,7 @@ class BillSplitApp(ttk.Frame):
             for t in txs:
                 self.output.insert(tk.END, f"  - {self._label_for(t['from'])} → {self._label_for(t['to'])}: {money(t['amount'])}\n")
 
-    # ---------- Small Wins Logic (NEW) ----------
+    # ---------- Small Wins Logic ----------
     def _render_small_wins(self, goals_data: Optional[Dict]):
         self.sw_table.delete(*self.sw_table.get_children())
         if not goals_data or not isinstance(goals_data, dict):
@@ -1448,7 +1048,7 @@ class BillSplitApp(ttk.Frame):
             )
             self.sw_table.insert("", "end", values=row_values)
         
-        self.on_goal_select(None) # Update button states
+        self.on_goal_select(None)
 
     def add_small_win(self):
         if not self.room_id:
@@ -1495,7 +1095,6 @@ class BillSplitApp(ttk.Frame):
         values = item['values']
         if not values: return
 
-        # Find owner_uid from the hidden column
         owner_uid_idx = self.sw_cols.index("owner_uid")
         owner_uid = values[owner_uid_idx]
 
@@ -1556,13 +1155,13 @@ class BillSplitApp(ttk.Frame):
         finally:
             self.after(300, lambda: setattr(self, "_local_change", False))
 
+
 # =====================
 # App bootstrap
 # =====================
 def main():
     root = tk.Tk()
     try:
-        # Use a modern theme if available
         style = ttk.Style(root)
         if "azure" in style.theme_names():
             style.theme_use("azure")
@@ -1572,10 +1171,6 @@ def main():
             style.theme_use("clam")
     except Exception:
         pass
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
->>>>>>> Stashed changes
 
     def open_app(fb: FirebaseRTClient):
         for w in list(root.children.values()):
@@ -1585,39 +1180,10 @@ def main():
 
     LoginFrame(root, on_success=open_app)
     root.mainloop()
-<<<<<<< Updated upstream
-=======
->>>>>>> Stashed changes
 
-    def open_app(fb: FirebaseRTClient):
-        for w in list(root.children.values()):
-            try: w.destroy()
-            except: pass
-        BillSplitApp(root, fb)
-
-    LoginFrame(root, on_success=open_app)
-    root.mainloop()
-=======
->>>>>>> Stashed changes
->>>>>>> 2a106603506b8521e792f796a64e5c252d7d572a
 
 # =====================
 # Main
 # =====================
 if __name__ == "__main__":
-<<<<<<< HEAD
-    root = tk.Tk()
-    app = BillSplitApp(root)
-    root.mainloop()
-=======
     main()
-
-
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
->>>>>>> 2a106603506b8521e792f796a64e5c252d7d572a
->>>>>>> Stashed changes
-=======
->>>>>>> 2a106603506b8521e792f796a64e5c252d7d572a
->>>>>>> Stashed changes
