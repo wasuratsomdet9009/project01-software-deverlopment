@@ -1,13 +1,19 @@
+<<<<<<< Updated upstream
 '''
 <<<<<<< Updated upstream
 # split_bill_all_in_one_login_separated.py
 =======
+=======
+>>>>>>> Stashed changes
 <<<<<<< HEAD
 =======
 # split_bill_all_in_one_login_separated.py
 >>>>>>> 2a106603506b8521e792f796a64e5c252d7d572a
+<<<<<<< Updated upstream
 >>>>>>> Stashed changes
 '''
+=======
+>>>>>>> Stashed changes
 # ------------------------------------------------------------
 # ✓ หน้า Login แยกจากหน้าใช้งาน
 # ✓ Firebase Auth (Email/Password) + Username + Public profile
@@ -51,10 +57,13 @@ class Item:
     name: str
     price: float
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     payer: str              # UID
     participants: List[str] # [UID]
     weights: Optional[Dict[str, float]] = None  # {UID: weight}
 =======
+=======
+>>>>>>> Stashed changes
 <<<<<<< HEAD
     payer: str               # UID ผู้จ่ายก่อน
     participants: List[str]    # รายชื่อ UID ผู้ร่วมกิน
@@ -64,6 +73,9 @@ class Item:
     participants: List[str] # [UID]
     weights: Optional[Dict[str, float]] = None  # {UID: weight}
 >>>>>>> 2a106603506b8521e792f796a64e5c252d7d572a
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 
 @dataclass
@@ -169,7 +181,10 @@ class Bill:
     def to_dict(self):
         return {
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
+=======
+>>>>>>> Stashed changes
 <<<<<<< HEAD
             "people": list(self.people.keys()),  # list of UIDs
             "items": [
@@ -185,12 +200,19 @@ class Bill:
             "vat_pct": self.vat_pct,
             "tip": self.tip,
 =======
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
             "people": list(self.people.keys()),
             "items": [{"name":it.name,"price":it.price,"payer":it.payer,
                        "participants":it.participants,"weights":it.weights} for it in self.items],
             "service_pct": self.service_pct, "vat_pct": self.vat_pct, "tip": self.tip,
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=======
+>>>>>>> 2a106603506b8521e792f796a64e5c252d7d572a
+>>>>>>> Stashed changes
 =======
 >>>>>>> 2a106603506b8521e792f796a64e5c252d7d572a
 >>>>>>> Stashed changes
@@ -959,6 +981,7 @@ class BillSplitApp(ttk.Frame):
         self.refresh_summary()
 
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     def add_person(self):
         key = self.person_entry.get().strip()
         if not key: messagebox.showwarning("เตือน","กรอก UID หรือ username"); return
@@ -987,6 +1010,8 @@ class BillSplitApp(ttk.Frame):
         def f(s): s=(s or "0").strip(); return float(s) if s else 0.0
         try:
 =======
+=======
+>>>>>>> Stashed changes
 <<<<<<< HEAD
     def _keep_synced(self):
         if self.fb and self.room_id and not self._local_change:
@@ -1212,6 +1237,9 @@ class BillSplitApp(ttk.Frame):
 =======
         def f(s): s=(s or "0").strip(); return float(s) if s else 0.0
         try:
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
             self.bill.service_pct = f(self.service_var.get())
             self.bill.vat_pct     = f(self.vat_var.get())
@@ -1258,7 +1286,10 @@ class BillSplitApp(ttk.Frame):
 
     def remove_selected_item(self):
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
+=======
+>>>>>>> Stashed changes
 <<<<<<< HEAD
         selections = self.table.selection()
         if not selections:
@@ -1290,6 +1321,9 @@ class BillSplitApp(ttk.Frame):
         except Exception as e:
             messagebox.showerror("ผิดพลาด", f"ไม่สามารถลบรายการได้: {e}")
 =======
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
         sel = self.table.selection()
         if not sel: messagebox.showinfo("แจ้ง","เลือกรายการก่อน"); return
@@ -1299,6 +1333,10 @@ class BillSplitApp(ttk.Frame):
         except: messagebox.showerror("ผิดพลาด","ไม่พบดัชนีรายการ"); return
         self.bill.remove_item_at(idx1-1); self._rebuild_table(); self.refresh_summary(); self._push_bill()
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=======
+>>>>>>> 2a106603506b8521e792f796a64e5c252d7d572a
+>>>>>>> Stashed changes
 =======
 >>>>>>> 2a106603506b8521e792f796a64e5c252d7d572a
 >>>>>>> Stashed changes
@@ -1310,7 +1348,10 @@ class BillSplitApp(ttk.Frame):
 
         try:
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
+=======
+>>>>>>> Stashed changes
 <<<<<<< HEAD
             sub, svc, vat, total = self.bill._totals()
             costs = self.bill.summary_costs()
@@ -1358,6 +1399,9 @@ class BillSplitApp(ttk.Frame):
         except tk.TclError:
              messagebox.showwarning("คัดลอก", "ไม่สามารถเข้าถึงคลิปบอร์ดได้")
 
+=======
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
             subtotal, svc, vat, total = self.bill._totals()
@@ -1538,15 +1582,7 @@ def main():
     except Exception:
         pass
 <<<<<<< Updated upstream
-
-    def open_app(fb: FirebaseRTClient):
-        for w in list(root.children.values()):
-            try: w.destroy()
-            except: pass
-        BillSplitApp(root, fb)
-
-    LoginFrame(root, on_success=open_app)
-    root.mainloop()
+<<<<<<< Updated upstream
 =======
 >>>>>>> Stashed changes
 
@@ -1558,6 +1594,20 @@ def main():
 
     LoginFrame(root, on_success=open_app)
     root.mainloop()
+<<<<<<< Updated upstream
+=======
+>>>>>>> Stashed changes
+
+    def open_app(fb: FirebaseRTClient):
+        for w in list(root.children.values()):
+            try: w.destroy()
+            except: pass
+        BillSplitApp(root, fb)
+
+    LoginFrame(root, on_success=open_app)
+    root.mainloop()
+=======
+>>>>>>> Stashed changes
 >>>>>>> 2a106603506b8521e792f796a64e5c252d7d572a
 
 # =====================
@@ -1573,6 +1623,10 @@ if __name__ == "__main__":
 
 
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=======
+>>>>>>> 2a106603506b8521e792f796a64e5c252d7d572a
+>>>>>>> Stashed changes
 =======
 >>>>>>> 2a106603506b8521e792f796a64e5c252d7d572a
 >>>>>>> Stashed changes
