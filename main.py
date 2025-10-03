@@ -56,28 +56,19 @@ class Person:
 class Item:
     name: str
     price: float
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
+
+
     payer: str              # UID
     participants: List[str] # [UID]
     weights: Optional[Dict[str, float]] = None  # {UID: weight}
-=======
-=======
->>>>>>> Stashed changes
-<<<<<<< HEAD
+
     payer: str               # UID ผู้จ่ายก่อน
     participants: List[str]    # รายชื่อ UID ผู้ร่วมกิน
     weights: Optional[Dict[str, float]] = None  # key ต้องเป็น UID
-=======
+
     payer: str              # UID
     participants: List[str] # [UID]
     weights: Optional[Dict[str, float]] = None  # {UID: weight}
->>>>>>> 2a106603506b8521e792f796a64e5c252d7d572a
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
-
 @dataclass
 class Bill:
     people: Dict[str, Person] = field(default_factory=dict)
