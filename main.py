@@ -95,13 +95,16 @@ class Bill:
         raw = defaultdict(float)
         for it in self.items:
             if it.weights:
-                totw = sum(it.weights[p] for p in it.participants)
+                totw = sum(it.weights[p] for p in it.participants if p in it.weights)
+                if totw == 0: continue
                 for p in it.participants:
-                    raw[p] += it.price * (it.weights[p] / totw)
+                    if p in it.weights:
+                        raw[p] += it.price * (it.weights[p] / totw)
             else:
+                if not it.participants: continue
                 each = it.price / len(it.participants)
                 for p in it.participants: raw[p] += each
-        scale = total / subtotal
+        scale = total / subtotal if subtotal > 0 else 1.0
         return {p: raw.get(p, 0.0) * scale for p in self.people}
 
     def paid_map(self) -> Dict[str, float]:
@@ -162,9 +165,13 @@ class Bill:
         b.vat_pct     = float(data.get("vat_pct", 0))
         b.tip         = float(data.get("tip", 0))
         for it in data.get("items", []):
-            b.add_item(Item(name=it["name"], price=float(it["price"]),
-                            payer=it["payer"], participants=list(it["participants"]),
-                            weights=it.get("weights")))
+            try:
+                b.add_item(Item(name=it["name"], price=float(it["price"]),
+                                payer=it["payer"], participants=list(it["participants"]),
+                                weights=it.get("weights")))
+            except (ValueError, KeyError):
+                # Ignore invalid items from DB
+                continue
         return b
 
 # =====================
@@ -327,23 +334,26 @@ class FirebaseRTClient:
                         if self._stop_stream: break
                         if msg.event in ("put","patch"):
                             try:
-                                data = json.loads(msg.data); on_event(data)
-                            except: pass
-                except:
+                                on_event(json.loads(msg.data))
+                            except (json.JSONDecodeError, TypeError):
+                                pass
+                except Exception:
                     try: self.refresh_id_token()
-                    except: pass
+                    except Exception: pass
                     time.sleep(2)
 
         def run_poll():
-            last=None
+            last_json = None
             while not self._stop_stream:
                 try:
                     data = requests.get(url, params={"auth": self.id_token}, timeout=30).json()
-                    if data is not None and data != last:
-                        on_event({"path": "/", "data": data}); last = data
-                except:
+                    current_json = json.dumps(data, sort_keys=True)
+                    if data is not None and current_json != last_json:
+                        on_event({"path": "/", "data": data})
+                        last_json = current_json
+                except Exception:
                     try: self.refresh_id_token()
-                    except: pass
+                    except Exception: pass
                 time.sleep(3)
 
         threading.Thread(target=(run_sse if SSEClient else run_poll), daemon=True).start()
@@ -526,6 +536,7 @@ class BillSplitApp(ttk.Frame):
         self.name_cache: Dict[str,str] = {}
         self.people_uids: List[str] = []
         self.label2uid: Dict[str,str] = {}
+        self.small_wins_data: Optional[Dict] = None # ✅ For nudge detection
 
         master.title("หารค่าอาหาร & เป้าหมายเล็กๆ • Tkinter + Firebase")
         master.geometry("1120x700")
@@ -730,6 +741,9 @@ class BillSplitApp(ttk.Frame):
             pass
 
     def bind_room(self, room_id: str):
+        # ✅ Optimization: Pre-fetch all member profiles in the background
+        threading.Thread(target=self._fetch_and_cache_member_profiles, daemon=True).start()
+
         # Bind Bills data
         try:
             if not self.fb.is_member(room_id):
@@ -757,21 +771,40 @@ class BillSplitApp(ttk.Frame):
 
         # Bind Small Wins data
         def on_sw_event(ev):
-            if self._local_change: return # ✅ ป้องกัน re-render จาก action ของตัวเอง
-            # Event เป็นแค่ตัวกระตุ้น เราจะ fetch ข้อมูลทั้งหมดมาใหม่เสมอเพื่อความแน่นอน
+            if self._local_change: return
             try:
-                full_sw_data = self.fb.get(f"small_wins/{self.room_id}")
+                new_data = self.fb.get(f"small_wins/{self.room_id}") or {}
             except Exception:
-                return # ถ้า fetch พลาดก็ไม่ต้องทำอะไร
+                return
+
+            # ✅ Nudge detection logic
+            if self.small_wins_data and isinstance(self.small_wins_data, dict):
+                for goal_id, new_goal in new_data.items():
+                    if (goal_id in self.small_wins_data and new_goal.get("ownerUid") == self.fb.local_uid):
+                        old_nudges = self.small_wins_data[goal_id].get("nudges", {}) or {}
+                        new_nudges = new_goal.get("nudges", {}) or {}
+                        
+                        new_nudger_uids = set(new_nudges.keys()) - set(old_nudges.keys())
+                        
+                        if new_nudger_uids:
+                            nudger_uid = list(new_nudger_uids)[0]
+                            nudger_name = self._label_for(nudger_uid)
+                            goal_text = new_goal.get('goalText', '')
+                            # Schedule messagebox on main thread
+                            self.after(0, lambda n=nudger_name, g=goal_text: messagebox.showinfo(
+                                "คุณถูกสะกิด!",
+                                f"คุณ '{n}' สะกิดเป้าหมายของคุณ:\n\n'{g}'"
+                            ))
             
-            self.after(0, lambda: self._render_small_wins(full_sw_data))
+            self.small_wins_data = new_data
+            self.after(0, lambda: self._render_small_wins(new_data))
 
         try:
             self.fb.stream(f"bills/{room_id}", on_bill_event)
             self.fb.stream(f"small_wins/{room_id}", on_sw_event)
             # Initial load for small wins
-            sw_data = self.fb.get(f"small_wins/{room_id}")
-            self._render_small_wins(sw_data)
+            self.small_wins_data = self.fb.get(f"small_wins/{room_id}")
+            self._render_small_wins(self.small_wins_data)
         except Exception as e:
             print(f"Error starting stream: {e}")
 
@@ -787,9 +820,8 @@ class BillSplitApp(ttk.Frame):
         key = simpledialog.askstring("เชิญเพื่อน", "กรอก username หรือ UID:", parent=self)
         if not key: return
 
-        # แปลง username -> UID ถ้าจำเป็น
         target_uid = None
-        if len(key) < 28:  # น่าจะเป็น username
+        if len(key) < 28:
             target_uid = self.fb.uid_from_username(key)
             if not target_uid:
                 messagebox.showerror("ไม่พบ", f"ไม่พบ username: {key}"); return
@@ -798,11 +830,33 @@ class BillSplitApp(ttk.Frame):
 
         try:
             self.fb.add_member(self.room_id, target_uid, invited_by=self.fb.local_uid)
-            messagebox.showinfo("สำเร็จ", f"เชิญเข้าห้องแล้ว: {target_uid[:6]}…")
+            # ✅ Add new member to the current bill object
+            self.bill.add_person(target_uid)
+            self._push_bill()
+            self._render_all_from_bill()
+            messagebox.showinfo("สำเร็จ", f"เชิญเข้าห้องแล้ว: {self._label_for(target_uid)}")
         except Exception as e:
             messagebox.showerror("เชิญไม่ได้", str(e))
 
-    # ---------- Helpers ----------
+    # ---------- Helpers & Optimization ----------
+    def _fetch_and_cache_member_profiles(self):
+        """ ✅ [OPTIMIZATION] Fetch all member profiles in the background to prevent UI freeze. """
+        if not self.room_id: return
+        try:
+            members = self.fb.get(f"rooms/{self.room_id}/members") or {}
+            for uid in members.keys():
+                if uid not in self.name_cache:
+                    self._label_for(uid) # This will fetch and cache
+            
+            # Once done, trigger a re-render on the main thread to show the names
+            def rerender_ui():
+                self._render_all_from_bill()
+                self._render_small_wins(self.small_wins_data)
+            self.after(0, rerender_ui)
+
+        except Exception as e:
+            print(f"Failed to pre-fetch profiles: {e}")
+
     def _label_for(self, uid: str) -> str:
         if uid in self.name_cache: return self.name_cache[uid]
         label = uid[:6]
@@ -816,13 +870,18 @@ class BillSplitApp(ttk.Frame):
 
     # ---------- Bill Splitting Logic ----------
     def _refresh_people_widgets(self):
-        self.people_uids = list(self.bill.people.keys())
+        self.people_uids = sorted(list(self.bill.people.keys()))
         labels=[]; self.label2uid={}
         for uid in self.people_uids:
             lab = self._label_for(uid); labels.append(lab); self.label2uid[lab]=uid
+        
         self.payer_combo["values"] = labels
+        if not self.payer_combo.get() and labels:
+            self.payer_combo.set(labels[0])
+
         self.participants_list.delete(0, tk.END)
-        for uid in self.people_uids: self.participants_list.insert(tk.END, self._label_for(uid))
+        for label in labels: self.participants_list.insert(tk.END, label)
+        
         self.people_list.delete(0, tk.END)
         for uid in self.people_uids: self.people_list.insert(tk.END, f"{self._label_for(uid)}  ({uid[:6]}…)")
 
@@ -846,16 +905,19 @@ class BillSplitApp(ttk.Frame):
         scale = self._compute_scale()
         if not it.participants: return 0.0
         if it.weights:
-            totw = sum(it.weights[p] for p in it.participants)
-            return it.price * scale / totw
+            totw = sum(it.weights[p] for p in it.participants if p in it.weights)
+            return (it.price * scale / totw) if totw > 0 else 0.0
         return (it.price * scale) / len(it.participants)
 
     def _item_shares(self, it: Item) -> Dict[str, float]:
         scale = self._compute_scale(); shares={}
         if not it.participants: return shares
         if it.weights:
-            totw = sum(it.weights[p] for p in it.participants)
-            for p in it.participants: shares[self._label_for(p)] = (it.price*scale)*(it.weights[p]/totw)
+            totw = sum(it.weights[p] for p in it.participants if p in it.weights)
+            if totw > 0:
+                for p in it.participants:
+                    if p in it.weights:
+                        shares[self._label_for(p)] = (it.price*scale)*(it.weights[p]/totw)
         else:
             each = (it.price*scale)/len(it.participants)
             for p in it.participants: shares[self._label_for(p)] = each
@@ -933,9 +995,19 @@ class BillSplitApp(ttk.Frame):
     def remove_person(self):
         sel = self.people_list.curselection()
         if not sel: messagebox.showinfo("แจ้ง","เลือกเพื่อนก่อน"); return
-        uid = self.people_uids[sel[0]]
+        uid_label_part = self.people_list.get(sel[0]).split('  (')[0]
+        uid_to_remove = None
+        for uid, label in self.label2uid.items():
+            if label == uid_label_part:
+                uid_to_remove = uid
+                break
+
+        if not uid_to_remove:
+             messagebox.showerror("ผิดพลาด", "ไม่สามารถหา UID ของผู้ใช้ที่เลือกได้")
+             return
+
         try:
-            self.bill.remove_person(uid); self._render_all_from_bill(); self._push_bill() # ✅ [FIX] เรียก render ทั้งหมด
+            self.bill.remove_person(uid_to_remove); self._render_all_from_bill(); self._push_bill()
         except Exception as e:
             messagebox.showerror("ลบไม่ได้", str(e))
 
@@ -945,40 +1017,50 @@ class BillSplitApp(ttk.Frame):
             self.bill.service_pct = f(self.service_var.get())
             self.bill.vat_pct     = f(self.vat_var.get())
             self.bill.tip         = f(self.tip_var.get())
+            self._rebuild_table() # ✅ [FIX] Rebuild table to update per-head costs
             self.refresh_summary(); self._push_bill()
         except Exception as e:
             messagebox.showerror("ผิดพลาด", str(e))
 
     def _get_selected_participants(self) -> List[str]:
         if self.all_var.get(): return list(self.bill.people.keys())
-        sel = self.participants_list.curselection()
-        return [self.people_uids[i] for i in sel]
+        sel_indices = self.participants_list.curselection()
+        sel_labels = [self.participants_list.get(i) for i in sel_indices]
+        
+        # Reverse lookup from label to UID
+        uid_map = {v: k for k, v in self.label2uid.items()}
+        return [uid_map[label] for label in sel_labels if label in uid_map]
 
     def add_item(self):
         name = self.item_name.get().strip()
         price_raw = self.item_price.get().strip()
         payer_label = self.payer_combo.get().strip()
-        parts = self._get_selected_participants()
-        if not name or not price_raw or not payer_label or not parts:
+        parts_uids = self._get_selected_participants()
+        if not name or not price_raw or not payer_label or not parts_uids:
             messagebox.showwarning("เตือน","กรอกข้อมูลให้ครบ"); return
-        payer_uid = self.label2uid.get(payer_label, payer_label)
+        
+        payer_uid = self.label2uid.get(payer_label)
+        if not payer_uid:
+            messagebox.showerror("ผิดพลาด", f"ไม่พบ UID สำหรับผู้จ่าย: {payer_label}"); return
+
         try: price = float(price_raw)
         except: messagebox.showerror("ผิดพลาด","ราคาไม่ถูกต้อง"); return
 
         weights = None
         if self.use_weights.get():
             weights={}
-            for uid in parts:
+            for uid in parts_uids:
                 while True:
-                    w = simpledialog.askstring("weight", f"weight ของ {self._label_for(uid)} (>0):", parent=self)
-                    if w is None: return
+                    w = simpledialog.askstring("Weight", f"ใส่ Weight ของ '{self._label_for(uid)}' (>0):", parent=self)
+                    if w is None: return # User cancelled
                     try:
                         v=float(w)
                         if v<=0: raise ValueError
                         weights[uid]=v; break
-                    except: messagebox.showwarning("เตือน","ใส่ตัวเลข > 0")
+                    except (ValueError, TypeError):
+                        messagebox.showwarning("เตือน","กรุณาใส่ Weight เป็นตัวเลขที่มากกว่า 0")
         try:
-            self.bill.add_item(Item(name=name, price=price, payer=payer_uid, participants=parts, weights=weights))
+            self.bill.add_item(Item(name=name, price=price, payer=payer_uid, participants=parts_uids, weights=weights))
             self.item_name.delete(0,tk.END); self.item_price.delete(0,tk.END); self.use_weights.set(False)
             self._rebuild_table(); self.refresh_summary(); self._push_bill()
         except Exception as e:
@@ -990,7 +1072,8 @@ class BillSplitApp(ttk.Frame):
         rid = sel[0]; parent = self.table.parent(rid) or rid
         vals = self.table.item(parent,"values")
         try: idx1 = int(vals[0])
-        except: messagebox.showerror("ผิดพลาด","ไม่พบดัชนีรายการ"); return
+        except (ValueError, IndexError):
+            messagebox.showerror("ผิดพลาด","ไม่พบดัชนีรายการ"); return
         self.bill.remove_item_at(idx1-1); self._rebuild_table(); self.refresh_summary(); self._push_bill()
 
     def refresh_summary(self):
@@ -999,7 +1082,10 @@ class BillSplitApp(ttk.Frame):
             should = self.bill.summary_costs(); paid = self.bill.paid_map()
             net = self.bill.net_balance(); txs = self.bill.settle_transactions()
         except Exception as e:
-            messagebox.showerror("ผิดพลาด", str(e)); return
+            self.output.delete(1.0, tk.END)
+            self.output.insert(tk.END, f"เกิดข้อผิดพลาดในการคำนวณ:\n{e}")
+            return
+        
         money = lambda x: f"{x:,.2f} บาท"
         self.output.delete(1.0, tk.END)
         self.output.insert(tk.END, "สรุปร้าน/บิล\n")
@@ -1033,7 +1119,7 @@ class BillSplitApp(ttk.Frame):
             owner_name = self._label_for(owner_uid)
             
             deadline_ts = goal.get("deadline", 0)
-            deadline_str = datetime.fromtimestamp(deadline_ts).strftime('%Y-%m-%d %H:%M') if deadline_ts > 0 else "N/A"
+            deadline_str = datetime.fromtimestamp(deadline_ts).strftime('%d %b %Y %H:%M') if deadline_ts > 0 else "N/A"
             
             nudges = goal.get("nudges", {})
             nudge_count = len(nudges) if isinstance(nudges, dict) else 0
@@ -1131,7 +1217,6 @@ class BillSplitApp(ttk.Frame):
         try:
             self._local_change = True
             self.fb.put(path, int(time.time()))
-            messagebox.showinfo("สำเร็จ", "ส่งสะกิดให้เพื่อนแล้ว!")
         except Exception as e:
             messagebox.showerror("ผิดพลาด", f"ไม่สามารถสะกิดได้: {e}")
         finally:
@@ -1184,5 +1269,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
