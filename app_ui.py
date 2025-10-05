@@ -25,7 +25,7 @@ class LoginFrame(ttk.Frame):
         style.theme_use('clam')
         style.configure('TFrame', background="#FFB1B4")                # พื้นหลัง Frame สีชมพู
         style.configure('TLabel', background="#FFB1B4", foreground='#222')   # Label ตัวอักษรดำ พื้นชมพู
-        style.configure('TButton', background="#FFE1E2", foreground='#222', font=('Segoe UI', 11, 'bold'))
+        style.configure('TButton', background="#FFDEDF", foreground='#222', font=('Segoe UI', 11, 'bold'))
         style.map('TButton', background=[('active', "#D0D0D0"), ('!active', "#FFFFFF")])
         frm = ttk.Frame(self); frm.pack(expand=True, fill="both")
         ttk.Label(frm, text="เข้าสู่ระบบ", font=("Segoe UI", 14, "bold")).pack(pady=(0,10))
