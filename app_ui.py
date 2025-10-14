@@ -36,7 +36,7 @@ class LoginFrame(ttk.Frame):
         frm.pack(expand=True, fill="both")
 
         # Logo/Title
-        logo = ttk.Label(frm, text="👨‍👩‍👧‍👦", font=("Segoe UI Emoji", 32), style='Title.TLabel')
+        logo = ttk.Label(frm, text="🫂", font=("Segoe UI Emoji", 32), style='Title.TLabel')
         logo.pack(pady=(0, 2))
         ttk.Label(frm, text="เข้าสู่ระบบ", style='Title.TLabel').pack(pady=(0, 12))
 
