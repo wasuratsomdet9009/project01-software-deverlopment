@@ -18,64 +18,40 @@ class LoginFrame(ttk.Frame):
         super().__init__(master)
         self.on_success = on_success
         self.grid(sticky="nsew", padx=24, pady=24)
-        master.title("เข้าสู่ระบบ • Bill Split App")
-        master.geometry("420x340")
-        master.columnconfigure(0, weight=1)
-        master.rowconfigure(0, weight=1)
-        master.configure(bg="#ffe6f0")  # สีพื้นหลังชมพูอ่อน
+        master.title("เข้าสู่ระบบ • Bill Split App"); master.geometry("420x320")
+        master.columnconfigure(0, weight=1); master.rowconfigure(0, weight=1)
 
-        style = ttk.Style()
+        style = ttk.Style(master)
         style.theme_use('clam')
-        style.configure("Pink.TFrame", background="#ffe6f0")
-        style.configure("Pink.TLabel", background="#ffe6f0", foreground="#d6336c", font=("Segoe UI", 12))
-        style.configure("PinkHeader.TLabel", background="#ffe6f0", foreground="#d6336c", font=("Segoe UI", 16, "bold"))
-        style.configure("Pink.TButton", background="#f8bbd0", foreground="#d6336c", font=("Segoe UI", 12), padding=8)
-        style.map("Pink.TButton", background=[("active", "#f48fb1")])
-        style.configure("Pink.TEntry", fieldbackground="#fff0f6", foreground="#d6336c", font=("Segoe UI", 12))
-        style.configure("Pink.TRadiobutton", background="#ffe6f0", foreground="#d6336c", font=("Segoe UI", 12))
-        style.configure("Pink.TCheckbutton", background="#ffe6f0", foreground="#d6336c", font=("Segoe UI", 12))
-
-        frm = ttk.Frame(self, style="Pink.TFrame")
-        frm.pack(expand=True, fill="both")
-        ttk.Label(frm, text="เข้าสู่ระบบ", style="PinkHeader.TLabel").pack(pady=(0, 14))
+        style.configure('TFrame', background="#FFB1B4")                # พื้นหลัง Frame สีชมพู
+        style.configure('TLabel', background="#FFB1B4", foreground='#222')   # Label ตัวอักษรดำ พื้นชมพู
+        style.configure('TButton', background="#FFDEDF", foreground='#222', font=('Segoe UI', 11, 'bold'))
+        style.map('TButton', background=[('active', "#D0D0D0"), ('!active', "#FFFFFF")])
+        frm = ttk.Frame(self); frm.pack(expand=True, fill="both")
+        ttk.Label(frm, text="เข้าสู่ระบบ", font=("Segoe UI", 14, "bold")).pack(pady=(0,10))
 
         self.has_account = tk.BooleanVar(value=True)
-        r1 = ttk.Frame(frm, style="Pink.TFrame")
-        r1.pack(fill="x", pady=(0, 8))
-        ttk.Radiobutton(
-            r1, text="ฉันมีบัญชีแล้ว (Login)", variable=self.has_account, value=True,
-            command=self._update_ui, style="Pink.TRadiobutton"
-        ).pack(side="left")
-        ttk.Radiobutton(
-            r1, text="สมัครใหม่ (Sign up)", variable=self.has_account, value=False,
-            command=self._update_ui, style="Pink.TRadiobutton"
-        ).pack(side="left", padx=10)
+        r1 = ttk.Frame(frm); r1.pack(fill="x")
+        ttk.Radiobutton(r1, text="ฉันมีบัญชีแล้ว (Login)", variable=self.has_account, value=True, command=self._update_ui).pack(side="left")
+        ttk.Radiobutton(r1, text="สมัครใหม่ (Sign up)", variable=self.has_account, value=False, command=self._update_ui).pack(side="left", padx=10)
 
-        ttk.Label(frm, text="อีเมล", style="Pink.TLabel").pack(anchor="w", pady=(8, 2))
-        self.email_entry = ttk.Entry(frm, style="Pink.TEntry")
-        self.email_entry.pack(fill="x", ipady=4)
-        self.pwd_var = tk.StringVar()
-        self.cpwd_var = tk.StringVar()
-        pw_block = ttk.Frame(frm, style="Pink.TFrame")
-        pw_block.pack(fill="x", pady=(8, 0))
-        ttk.Label(pw_block, text="รหัสผ่าน", style="Pink.TLabel").pack(anchor="w")
-        row = ttk.Frame(pw_block, style="Pink.TFrame")
-        row.pack(fill="x")
-        self.pwd_entry = ttk.Entry(row, show="*", textvariable=self.pwd_var, style="Pink.TEntry")
-        self.pwd_entry.pack(side="left", fill="x", expand=True, ipady=4)
+        ttk.Label(frm, text="อีเมล").pack(anchor="w", pady=(10,2))
+        self.email_entry = ttk.Entry(frm); self.email_entry.pack(fill="x")
+        self.pwd_var = tk.StringVar(); self.cpwd_var = tk.StringVar()
+        pw_block = ttk.Frame(frm); pw_block.pack(fill="x", pady=(8,0))
+        ttk.Label(pw_block, text="รหัสผ่าน").pack(anchor="w")
+        row = ttk.Frame(pw_block); row.pack(fill="x")
+        self.pwd_entry = ttk.Entry(row, show="*", textvariable=self.pwd_var)
+        self.pwd_entry.pack(side="left", fill="x", expand=True)
         self.show_pw_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(
-            row, text="แสดง", variable=self.show_pw_var, command=self._toggle_password_visibility,
-            style="Pink.TCheckbutton"
-        ).pack(side="left", padx=8)
-        self.cpw_frame = ttk.Frame(pw_block, style="Pink.TFrame")
-        ttk.Label(self.cpw_frame, text="ยืนยันรหัสผ่าน", style="Pink.TLabel").pack(anchor="w", pady=(8, 2))
-        self.cpwd_entry = ttk.Entry(self.cpw_frame, show="*", textvariable=self.cpwd_var, style="Pink.TEntry")
-        self.cpwd_entry.pack(fill="x", ipady=4)
-        self.action_button = ttk.Button(frm, text="เข้าสู่ระบบ", command=self.attempt_auth, style="Pink.TButton")
-        self.action_button.pack(pady=18, fill="x", ipady=4)
-        self.status_label = ttk.Label(frm, text="", foreground="#d6336c", style="Pink.TLabel")
-        self.status_label.pack()
+        ttk.Checkbutton(row, text="แสดง", variable=self.show_pw_var, command=self._toggle_password_visibility).pack(side="left", padx=8)
+        self.cpw_frame = ttk.Frame(pw_block)
+        ttk.Label(self.cpw_frame, text="ยืนยันรหัสผ่าน").pack(anchor="w", pady=(8,2))
+        self.cpwd_entry = ttk.Entry(self.cpw_frame, show="*", textvariable=self.cpwd_var)
+        self.cpwd_entry.pack(fill="x")
+        self.action_button = ttk.Button(frm, text="เข้าสู่ระบบ", command=self.attempt_auth)
+        self.action_button.pack(pady=16)
+        self.status_label = ttk.Label(frm, text="", foreground="#666"); self.status_label.pack()
 
         for w in (self.email_entry, self.pwd_entry, self.cpwd_entry):
             w.bind("<Return>", lambda *_: self.attempt_auth())
@@ -137,23 +113,7 @@ class BillSplitApp(ttk.Frame):
         self.name_cache: Dict[str, str] = {}; self.label2uid: Dict[str, str] = {}
         self.small_wins_data: Optional[Dict] = None
 
-        # --- Pink theme setup ---
-        style = ttk.Style()
-        style.theme_use('clam')
-        style.configure("Pink.TFrame", background="#ffe6f0")
-        style.configure("Pink.TLabel", background="#ffe6f0", foreground="#d6336c", font=("Segoe UI", 12))
-        style.configure("PinkHeader.TLabel", background="#ffe6f0", foreground="#d6336c", font=("Segoe UI", 14, "bold"))
-        style.configure("Pink.TButton", background="#f8bbd0", foreground="#d6336c", font=("Segoe UI", 11), padding=6)
-        style.map("Pink.TButton", background=[("active", "#f48fb1")])
-        style.configure("Pink.TEntry", fieldbackground="#fff0f6", foreground="#d6336c", font=("Segoe UI", 11))
-        style.configure("Pink.TRadiobutton", background="#ffe6f0", foreground="#d6336c", font=("Segoe UI", 11))
-        style.configure("Pink.TCheckbutton", background="#ffe6f0", foreground="#d6336c", font=("Segoe UI", 11))
-        style.configure("Pink.TLabelframe", background="#ffe6f0", foreground="#d6336c", font=("Segoe UI", 12, "bold"))
-        style.configure("Pink.TLabelframe.Label", background="#ffe6f0", foreground="#d6336c", font=("Segoe UI", 12, "bold"))
-
-        master.title("หารค่าอาหาร & เป้าหมายเล็กๆ • Tkinter + Firebase")
-        master.geometry("1120x700")
-        master.configure(bg="#ffe6f0")
+        master.title("หารค่าอาหาร & เป้าหมายเล็กๆ • Tkinter + Firebase"); master.geometry("1120x700")
         self.pack(fill=tk.BOTH, expand=True)
 
         default_font = font.nametofont("TkDefaultFont")
@@ -163,65 +123,61 @@ class BillSplitApp(ttk.Frame):
 
     def _build_layout(self):
         """สร้าง Layout หลักของโปรแกรม"""
-        top_bar = ttk.Frame(self, style="Pink.TFrame")
-        top_bar.pack(fill="x", padx=10, pady=(10, 5))
-        ttk.Label(top_bar, text="สถานะ:", style="Pink.TLabel").pack(side="left")
-        self.status_label = ttk.Label(top_bar, text="ยังไม่ได้เลือกห้อง", style="PinkHeader.TLabel")
+        top_bar = ttk.Frame(self); top_bar.pack(fill="x", padx=10, pady=(10, 5))
+        ttk.Label(top_bar, text="สถานะ:", font=("Segoe UI", 10)).pack(side="left")
+        self.status_label = ttk.Label(top_bar, text="ยังไม่ได้เลือกห้อง", font=("Segoe UI", 10, "bold"))
         self.status_label.pack(side="left", padx=(4, 12))
-        ttk.Button(top_bar, text="เลือก/สร้างห้อง", command=self.open_room_picker, style="Pink.TButton").pack(side="left")
-        ttk.Button(top_bar, text="เชิญเพื่อนเข้าห้อง", command=self.invite_member, style="Pink.TButton").pack(side="left", padx=4)
-        ttk.Button(top_bar, text="คัดลอกรหัสห้อง", command=self.copy_room_id, style="Pink.TButton").pack(side="left")
+        ttk.Button(top_bar, text="เลือก/สร้างห้อง", command=self.open_room_picker).pack(side="left")
+        ttk.Button(top_bar, text="เชิญเพื่อนเข้าห้อง", command=self.invite_member).pack(side="left", padx=4)
+        ttk.Button(top_bar, text="คัดลอกรหัสห้อง", command=self.copy_room_id).pack(side="left")
 
-        self.notebook = ttk.Notebook(self)
-        self.notebook.pack(fill="both", expand=True, padx=10, pady=(5, 10))
-        bill_tab = ttk.Frame(self.notebook, style="Pink.TFrame")
-        self.notebook.add(bill_tab, text="💰 หารบิล")
-        sw_tab = ttk.Frame(self.notebook, style="Pink.TFrame")
-        self.notebook.add(sw_tab, text="🏆 เป้าหมายเล็กๆ (Small Wins)")
+        self.notebook = ttk.Notebook(self); self.notebook.pack(fill="both", expand=True, padx=10, pady=(5, 10))
+        bill_tab = ttk.Frame(self.notebook); self.notebook.add(bill_tab, text="💰 หารบิล")
+        sw_tab = ttk.Frame(self.notebook); self.notebook.add(sw_tab, text="🏆 เป้าหมายเล็กๆ (Small Wins)")
         self._build_bill_tab(bill_tab)
         self._build_small_wins_tab(sw_tab)
 
     def _build_bill_tab(self, parent):
         """สร้าง Layout ของ Tab หารบิล"""
         parent.columnconfigure(1, weight=1); parent.rowconfigure(0, weight=1)
-        left = ttk.Frame(parent, style="Pink.TFrame"); left.grid(row=0, column=0, sticky="nsw", padx=10, pady=10)
+        left = ttk.Frame(parent); left.grid(row=0, column=0, sticky="nsw", padx=10, pady=10)
         
-        ttk.Label(left, text="รายชื่อเพื่อน (ที่ใช้งานอยู่)", style="PinkHeader.TLabel").grid(row=0, column=0, columnspan=2, sticky="w")
-        self.person_entry = ttk.Entry(left, width=22, style="Pink.TEntry"); self.person_entry.grid(row=1, column=0, sticky="ew")
-        ttk.Button(left, text="เพิ่ม (UID/username)", command=self.add_person, style="Pink.TButton").grid(row=1, column=1, padx=5)
-        self.people_list = tk.Listbox(left, height=5, exportselection=False, bg="#fff0f6", fg="#d6336c", font=("Segoe UI", 11)); self.people_list.grid(row=2, column=0, columnspan=2, sticky="we", pady=5)
-        ttk.Button(left, text="เคลียร์ยอดและนำออก", command=self.remove_person, style="Pink.TButton").grid(row=3, column=0, columnspan=2, sticky="we")
+        ttk.Label(left, text="รายชื่อเพื่อน (ที่ใช้งานอยู่)", font=("Segoe UI", 11, "bold")).grid(row=0, column=0, columnspan=2, sticky="w")
+        self.person_entry = ttk.Entry(left, width=22); self.person_entry.grid(row=1, column=0, sticky="ew")
+        ttk.Button(left, text="เพิ่ม (UID/username)", command=self.add_person).grid(row=1, column=1, padx=5)
+        self.people_list = tk.Listbox(left, height=5, exportselection=False); self.people_list.grid(row=2, column=0, columnspan=2, sticky="we", pady=5)
+        ttk.Button(left, text="เคลียร์ยอดและนำออก", command=self.remove_person).grid(row=3, column=0, columnspan=2, sticky="we")
 
-        ttk.Label(left, text="Service/VAT/Tip", style="PinkHeader.TLabel").grid(row=4, column=0, columnspan=2, sticky="w", pady=(10,5))
-        frm_cfg = ttk.Frame(left, style="Pink.TFrame"); frm_cfg.grid(row=5, column=0, columnspan=2, sticky="we")
+        ttk.Label(left, text="Service/VAT/Tip", font=("Segoe UI", 11, "bold")).grid(row=4, column=0, columnspan=2, sticky="w", pady=(10,5))
+        frm_cfg = ttk.Frame(left); frm_cfg.grid(row=5, column=0, columnspan=2, sticky="we")
         self.service_var=tk.StringVar(value="0"); self.vat_var=tk.StringVar(value="0"); self.tip_var=tk.StringVar(value="0")
-        ttk.Label(frm_cfg, text="Service %", style="Pink.TLabel").grid(row=0, column=0, sticky="w"); ttk.Entry(frm_cfg, textvariable=self.service_var, width=10, style="Pink.TEntry").grid(row=0, column=1, padx=5)
-        ttk.Label(frm_cfg, text="VAT %", style="Pink.TLabel").grid(row=1, column=0, sticky="w"); ttk.Entry(frm_cfg, textvariable=self.vat_var, width=10, style="Pink.TEntry").grid(row=1, column=1, padx=5)
-        ttk.Label(frm_cfg, text="Tip (บาท)", style="Pink.TLabel").grid(row=2, column=0, sticky="w"); ttk.Entry(frm_cfg, textvariable=self.tip_var, width=10, style="Pink.TEntry").grid(row=2, column=1, padx=5)
-        ttk.Button(left, text="อัปเดตค่าใช้จ่าย", command=self.update_config, style="Pink.TButton").grid(row=6, column=0, columnspan=2, sticky="we", pady=5)
+        ttk.Label(frm_cfg, text="Service %").grid(row=0, column=0, sticky="w"); ttk.Entry(frm_cfg, textvariable=self.service_var, width=10).grid(row=0, column=1, padx=5)
+        ttk.Label(frm_cfg, text="VAT %").grid(row=1, column=0, sticky="w"); ttk.Entry(frm_cfg, textvariable=self.vat_var, width=10).grid(row=1, column=1, padx=5)
+        ttk.Label(frm_cfg, text="Tip (บาท)").grid(row=2, column=0, sticky="w"); ttk.Entry(frm_cfg, textvariable=self.tip_var, width=10).grid(row=2, column=1, padx=5)
+        ttk.Button(left, text="อัปเดตค่าใช้จ่าย", command=self.update_config).grid(row=6, column=0, columnspan=2, sticky="we", pady=5)
 
-        ttk.Label(left, text="เพิ่มรายการอาหาร", style="PinkHeader.TLabel").grid(row=7, column=0, columnspan=2, sticky="w", pady=(10,5))
-        frm_item = ttk.Frame(left, style="Pink.TFrame"); frm_item.grid(row=8, column=0, columnspan=2, sticky="we")
-        ttk.Label(frm_item, text="ชื่อเมนู", style="Pink.TLabel").grid(row=0, column=0, sticky="w"); self.item_name = ttk.Entry(frm_item, width=22, style="Pink.TEntry"); self.item_name.grid(row=0, column=1, sticky="we", pady=1)
-        ttk.Label(frm_item, text="ราคา", style="Pink.TLabel").grid(row=1, column=0, sticky="w"); self.item_price = ttk.Entry(frm_item, width=22, style="Pink.TEntry"); self.item_price.grid(row=1, column=1, sticky="we", pady=1)
-        ttk.Label(frm_item, text="คนจ่าย", style="Pink.TLabel").grid(row=2, column=0, sticky="w"); self.payer_combo = ttk.Combobox(frm_item, values=[], state="readonly", width=20); self.payer_combo.grid(row=2, column=1, sticky="we", pady=1)
-        ttk.Label(frm_item, text="คนกิน", style="Pink.TLabel").grid(row=3, column=0, sticky="nw"); self.participants_list = tk.Listbox(frm_item, selectmode=tk.MULTIPLE, height=4, exportselection=False, bg="#fff0f6", fg="#d6336c", font=("Segoe UI", 11)); self.participants_list.grid(row=3, column=1, sticky="we", pady=1)
-        self.all_var=tk.BooleanVar(value=False); ttk.Checkbutton(frm_item, text="ทุกคน", variable=self.all_var, command=self.toggle_all_participants, style="Pink.TCheckbutton").grid(row=4, column=1, sticky="w")
-        self.use_weights=tk.BooleanVar(value=False); ttk.Checkbutton(frm_item, text="หารไม่เท่ากัน (weights)", variable=self.use_weights, style="Pink.TCheckbutton").grid(row=5, column=1, sticky="w", pady=(4,0))
-        btns = ttk.Frame(left, style="Pink.TFrame"); btns.grid(row=9, column=0, columnspan=2, sticky="we", pady=6)
-        ttk.Button(btns, text="เพิ่มรายการ", command=self.add_item, style="Pink.TButton").pack(side=tk.LEFT, expand=True, fill=tk.X, padx=2)
-        ttk.Button(btns, text="ลบรายการที่เลือก", command=self.remove_selected_item, style="Pink.TButton").pack(side=tk.LEFT, expand=True, fill=tk.X, padx=2)
+        ttk.Label(left, text="เพิ่มรายการอาหาร", font=("Segoe UI", 11, "bold")).grid(row=7, column=0, columnspan=2, sticky="w", pady=(10,5))
+        frm_item = ttk.Frame(left); frm_item.grid(row=8, column=0, columnspan=2, sticky="we")
+        ttk.Label(frm_item, text="ชื่อเมนู").grid(row=0, column=0, sticky="w"); self.item_name = ttk.Entry(frm_item, width=22); self.item_name.grid(row=0, column=1, sticky="we", pady=1)
+        ttk.Label(frm_item, text="ราคา").grid(row=1, column=0, sticky="w"); self.item_price = ttk.Entry(frm_item, width=22); self.item_price.grid(row=1, column=1, sticky="we", pady=1)
+        ttk.Label(frm_item, text="คนจ่าย").grid(row=2, column=0, sticky="w"); self.payer_combo = ttk.Combobox(frm_item, values=[], state="readonly", width=20); self.payer_combo.grid(row=2, column=1, sticky="we", pady=1)
+        ttk.Label(frm_item, text="คนกิน").grid(row=3, column=0, sticky="nw"); self.participants_list = tk.Listbox(frm_item, selectmode=tk.MULTIPLE, height=4, exportselection=False); self.participants_list.grid(row=3, column=1, sticky="we", pady=1)
+        self.all_var=tk.BooleanVar(value=False); ttk.Checkbutton(frm_item, text="ทุกคน", variable=self.all_var, command=self.toggle_all_participants).grid(row=4, column=1, sticky="w")
+        self.use_weights=tk.BooleanVar(value=False); ttk.Checkbutton(frm_item, text="หารไม่เท่ากัน (weights)", variable=self.use_weights).grid(row=5, column=1, sticky="w", pady=(4,0))
+        btns = ttk.Frame(left); btns.grid(row=9, column=0, columnspan=2, sticky="we", pady=6)
+        ttk.Button(btns, text="เพิ่มรายการ", command=self.add_item).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=2)
+        ttk.Button(btns, text="ลบรายการที่เลือก", command=self.remove_selected_item).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=2)
 
-        ttk.Label(left, text="เพิ่มรายการโอนเงิน", style="PinkHeader.TLabel").grid(row=10, column=0, columnspan=2, sticky="w", pady=(10,5))
-        frm_tf = ttk.Frame(left, style="Pink.TFrame"); frm_tf.grid(row=11, column=0, columnspan=2, sticky="we")
-        ttk.Label(frm_tf, text="จาก:", style="Pink.TLabel").grid(row=0, column=0, sticky="w"); self.tf_from = ttk.Combobox(frm_tf, values=[], state="readonly", width=20); self.tf_from.grid(row=0, column=1, sticky="we", pady=1)
-        ttk.Label(frm_tf, text="ถึง:", style="Pink.TLabel").grid(row=1, column=0, sticky="w"); self.tf_to = ttk.Combobox(frm_tf, values=[], state="readonly", width=20); self.tf_to.grid(row=1, column=1, sticky="we", pady=1)
-        ttk.Label(frm_tf, text="จำนวน:", style="Pink.TLabel").grid(row=2, column=0, sticky="w"); self.tf_amount = ttk.Entry(frm_tf, width=22, style="Pink.TEntry"); self.tf_amount.grid(row=2, column=1, sticky="we", pady=1)
-        ttk.Button(left, text="เพิ่มรายการโอน", command=self.add_transfer, style="Pink.TButton").grid(row=12, column=0, columnspan=2, sticky="we", pady=5)
+        ttk.Label(left, text="เพิ่มรายการโอนเงิน", font=("Segoe UI", 11, "bold")).grid(row=10, column=0, columnspan=2, sticky="w", pady=(10,5))
+        frm_tf = ttk.Frame(left); frm_tf.grid(row=11, column=0, columnspan=2, sticky="we")
+        ttk.Label(frm_tf, text="จาก:").grid(row=0, column=0, sticky="w"); self.tf_from = ttk.Combobox(frm_tf, values=[], state="readonly", width=20); self.tf_from.grid(row=0, column=1, sticky="we", pady=1)
+        ttk.Label(frm_tf, text="ถึง:").grid(row=1, column=0, sticky="w"); self.tf_to = ttk.Combobox(frm_tf, values=[], state="readonly", width=20); self.tf_to.grid(row=1, column=1, sticky="we", pady=1)
+        ttk.Label(frm_tf, text="จำนวน:").grid(row=2, column=0, sticky="w"); self.tf_amount = ttk.Entry(frm_tf, width=22); self.tf_amount.grid(row=2, column=1, sticky="we", pady=1)
+        ttk.Button(left, text="เพิ่มรายการโอน", command=self.add_transfer).grid(row=12, column=0, columnspan=2, sticky="we", pady=5)
         
-        right = ttk.Frame(parent, style="Pink.TFrame"); right.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
+        right = ttk.Frame(parent); right.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
         right.rowconfigure(1, weight=3); right.rowconfigure(3, weight=1); right.rowconfigure(6, weight=2); right.columnconfigure(0, weight=1)
-        ttk.Label(right, text="รายการทั้งหมด", style="PinkHeader.TLabel").grid(row=0, column=0, columnspan=2, sticky="w")
+        ttk.Label(right, text="รายการทั้งหมด", font=("Segoe UI", 11, "bold")).grid(row=0, column=0, columnspan=2, sticky="w")
         self.table_cols = ("idx","name","price","payer","count","participants")
         self.table = ttk.Treeview(right, columns=self.table_cols, show="headings", height=10, selectmode="browse")
         heads = {"idx":"#","name":"เมนู","price":"ราคา","payer":"คนจ่าย","count":"คนกิน","participants":"รายชื่อ"}
@@ -230,7 +186,7 @@ class BillSplitApp(ttk.Frame):
         for col in ("idx", "price", "count"): self.table.column(col, anchor="e")
         self.table.grid(row=1, column=0, sticky="nsew"); scr = ttk.Scrollbar(right, orient=tk.VERTICAL, command=self.table.yview); self.table.configure(yscrollcommand=scr.set); scr.grid(row=1, column=1, sticky="ns")
         
-        ttk.Label(right, text="รายการโอนเงินระหว่างบุคคล (คืนเงิน/จ่ายล่วงหน้า)", style="PinkHeader.TLabel").grid(row=2, column=0, columnspan=2, sticky="w", pady=(10,0))
+        ttk.Label(right, text="รายการโอนเงินระหว่างบุคคล (คืนเงิน/จ่ายล่วงหน้า)", font=("Segoe UI", 11, "bold")).grid(row=2, column=0, columnspan=2, sticky="w", pady=(10,0))
         self.tf_cols = ("idx", "from", "to", "amount")
         self.tf_table = ttk.Treeview(right, columns=self.tf_cols, show="headings", height=3, selectmode="browse")
         tf_heads = {"idx":"#", "from":"จาก", "to":"ถึง", "amount":"จำนวนเงิน (บาท)"}
@@ -238,23 +194,23 @@ class BillSplitApp(ttk.Frame):
         self.tf_table.column("idx", anchor="e", width=40); self.tf_table.column("amount", anchor="e", width=150)
         self.tf_table.grid(row=3, column=0, sticky="nsew"); scr_tf = ttk.Scrollbar(right, orient=tk.VERTICAL, command=self.tf_table.yview); self.tf_table.configure(yscrollcommand=scr_tf.set); scr_tf.grid(row=3, column=1, sticky="ns")
         
-        ttk.Button(right, text="ลบรายการโอนที่เลือก", command=self.remove_selected_transfer, style="Pink.TButton").grid(row=4, column=0, columnspan=2, sticky="e", pady=5)
-        ttk.Label(right, text="สรุปผล", style="PinkHeader.TLabel").grid(row=5, column=0, columnspan=2, sticky="w")
-        self.output = tk.Text(right, height=10, font=("Consolas", 9), bg="#fff0f6", fg="#d6336c"); self.output.grid(row=6, column=0, columnspan=2, sticky="nsew")
-
+        ttk.Button(right, text="ลบรายการโอนที่เลือก", command=self.remove_selected_transfer).grid(row=4, column=0, columnspan=2, sticky="e", pady=5)
+        ttk.Label(right, text="สรุปผล", font=("Segoe UI", 11, "bold")).grid(row=5, column=0, columnspan=2, sticky="w")
+        self.output = tk.Text(right, height=10, font=("Consolas", 9)); self.output.grid(row=6, column=0, columnspan=2, sticky="nsew")
+        
     def _build_small_wins_tab(self, parent):
         """สร้าง Layout ของ Tab Small Wins"""
         parent.columnconfigure(0, weight=1); parent.rowconfigure(1, weight=1)
-        add_frame = ttk.LabelFrame(parent, text="ตั้งเป้าหมายใหม่ของฉัน", padding=10, style="Pink.TLabelframe")
+        add_frame = ttk.LabelFrame(parent, text="ตั้งเป้าหมายใหม่ของฉัน", padding=10)
         add_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
         add_frame.columnconfigure(0, weight=1)
-        ttk.Label(add_frame, text="เป้าหมาย:", style="Pink.TLabel").grid(row=0, column=0, sticky="w")
-        self.sw_goal_text = ttk.Entry(add_frame, style="Pink.TEntry"); self.sw_goal_text.grid(row=1, column=0, sticky="ew", pady=(0, 5))
-        ttk.Label(add_frame, text="ทำให้สำเร็จใน (วัน):", style="Pink.TLabel").grid(row=0, column=1, sticky="w", padx=(10, 0))
-        self.sw_deadline_days = ttk.Entry(add_frame, width=10, style="Pink.TEntry"); self.sw_deadline_days.grid(row=1, column=1, sticky="w", padx=(10, 5))
-        ttk.Button(add_frame, text="ตั้งเป้าหมาย", command=self.add_small_win, style="Pink.TButton").grid(row=1, column=2)
+        ttk.Label(add_frame, text="เป้าหมาย:").grid(row=0, column=0, sticky="w")
+        self.sw_goal_text = ttk.Entry(add_frame); self.sw_goal_text.grid(row=1, column=0, sticky="ew", pady=(0, 5))
+        ttk.Label(add_frame, text="ทำให้สำเร็จใน (วัน):").grid(row=0, column=1, sticky="w", padx=(10, 0))
+        self.sw_deadline_days = ttk.Entry(add_frame, width=10); self.sw_deadline_days.grid(row=1, column=1, sticky="w", padx=(10, 5))
+        ttk.Button(add_frame, text="ตั้งเป้าหมาย", command=self.add_small_win).grid(row=1, column=2)
         
-        main_frame = ttk.Frame(parent, style="Pink.TFrame"); main_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=0)
+        main_frame = ttk.Frame(parent); main_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=0)
         main_frame.rowconfigure(0, weight=1); main_frame.columnconfigure(0, weight=1)
         self.sw_cols = ("status", "goal", "owner", "deadline", "nudges", "goal_id", "owner_uid")
         self.sw_table = ttk.Treeview(main_frame, columns=self.sw_cols, show="headings", selectmode="browse")
@@ -268,10 +224,10 @@ class BillSplitApp(ttk.Frame):
         self.sw_table.bind("<<TreeviewSelect>>", self.on_goal_select)
         self.sw_table.tag_configure("completed", foreground="gray", font=self.completed_font)
 
-        action_frame = ttk.Frame(parent, style="Pink.TFrame"); action_frame.grid(row=2, column=0, sticky="ew", padx=10, pady=10)
-        self.sw_nudge_btn = ttk.Button(action_frame, text="👉 สะกิดเพื่อน (Nudge)", command=self.nudge_selected_goal, state="disabled", style="Pink.TButton"); self.sw_nudge_btn.pack(side="left")
-        self.sw_complete_btn = ttk.Button(action_frame, text="✅ ทำสำเร็จแล้ว", command=self.complete_selected_goal, state="disabled", style="Pink.TButton"); self.sw_complete_btn.pack(side="left", padx=10)
-        self.sw_delete_btn = ttk.Button(action_frame, text="🗑️ ลบเป้าหมาย", command=self.delete_selected_goal, state="disabled", style="Pink.TButton"); self.sw_delete_btn.pack(side="left", padx=10)
+        action_frame = ttk.Frame(parent); action_frame.grid(row=2, column=0, sticky="ew", padx=10, pady=10)
+        self.sw_nudge_btn = ttk.Button(action_frame, text="👉 สะกิดเพื่อน (Nudge)", command=self.nudge_selected_goal, state="disabled"); self.sw_nudge_btn.pack(side="left")
+        self.sw_complete_btn = ttk.Button(action_frame, text="✅ ทำสำเร็จแล้ว", command=self.complete_selected_goal, state="disabled"); self.sw_complete_btn.pack(side="left", padx=10)
+        self.sw_delete_btn = ttk.Button(action_frame, text="🗑️ ลบเป้าหมาย", command=self.delete_selected_goal, state="disabled"); self.sw_delete_btn.pack(side="left", padx=10)
 
     def open_room_picker(self):
         """เปิด Pop-up สำหรับเลือก/สร้างห้อง"""
