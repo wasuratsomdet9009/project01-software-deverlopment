@@ -18,40 +18,61 @@ class LoginFrame(ttk.Frame):
         super().__init__(master)
         self.on_success = on_success
         self.grid(sticky="nsew", padx=24, pady=24)
-        master.title("เข้าสู่ระบบ • Bill Split App"); master.geometry("420x320")
-        master.columnconfigure(0, weight=1); master.rowconfigure(0, weight=1)
+        master.title("เข้าสู่ระบบ • Bill Split App")
+        master.geometry("420x500")
+        master.columnconfigure(0, weight=1)
+        master.rowconfigure(0, weight=1)
 
         style = ttk.Style(master)
         style.theme_use('clam')
-        style.configure('TFrame', background="#FFB1B4")                # พื้นหลัง Frame สีชมพู
-        style.configure('TLabel', background="#FFB1B4", foreground='#222')   # Label ตัวอักษรดำ พื้นชมพู
-        style.configure('TButton', background="#FFDEDF", foreground='#222', font=('Segoe UI', 11, 'bold'))
-        style.map('TButton', background=[('active', "#D0D0D0"), ('!active', "#FFFFFF")])
-        frm = ttk.Frame(self); frm.pack(expand=True, fill="both")
-        ttk.Label(frm, text="เข้าสู่ระบบ", font=("Segoe UI", 14, "bold")).pack(pady=(0,10))
+        style.configure('TFrame', background="#FFE3E6")
+        style.configure('TLabel', background="#FFE3E6", foreground='#222', font=('Segoe UI', 11))
+        style.configure('Title.TLabel', background="#FFE3E6", foreground='#D72660', font=('Segoe UI', 16, 'bold'))
+        style.configure('TButton', background="#FFDEDF", foreground='#222', font=('Segoe UI', 11, 'bold'), borderwidth=2)
+        style.map('TButton', background=[('active', "#FFD6E0"), ('!active', "#FFDEDF")])
+
+        frm = ttk.Frame(self, padding=18, style='TFrame')
+        frm.pack(expand=True, fill="both")
+
+        # Logo/Title
+        logo = ttk.Label(frm, text="👨‍👩‍👧‍👦", font=("Segoe UI Emoji", 32), style='Title.TLabel')
+        logo.pack(pady=(0, 2))
+        ttk.Label(frm, text="เข้าสู่ระบบ", style='Title.TLabel').pack(pady=(0, 12))
 
         self.has_account = tk.BooleanVar(value=True)
-        r1 = ttk.Frame(frm); r1.pack(fill="x")
-        ttk.Radiobutton(r1, text="ฉันมีบัญชีแล้ว (Login)", variable=self.has_account, value=True, command=self._update_ui).pack(side="left")
-        ttk.Radiobutton(r1, text="สมัครใหม่ (Sign up)", variable=self.has_account, value=False, command=self._update_ui).pack(side="left", padx=10)
+        r1 = ttk.Frame(frm, style='TFrame')
+        r1.pack(fill="x", pady=(0, 8))
+        ttk.Radiobutton(r1, text="ฉันมีบัญชีแล้ว (Login)", variable=self.has_account, value=True, command=self._update_ui).pack(side="left", padx=(0, 8))
+        ttk.Radiobutton(r1, text="สมัครใหม่ (Sign up)", variable=self.has_account, value=False, command=self._update_ui).pack(side="left")
 
-        ttk.Label(frm, text="อีเมล").pack(anchor="w", pady=(10,2))
-        self.email_entry = ttk.Entry(frm); self.email_entry.pack(fill="x")
-        self.pwd_var = tk.StringVar(); self.cpwd_var = tk.StringVar()
-        pw_block = ttk.Frame(frm); pw_block.pack(fill="x", pady=(8,0))
-        ttk.Label(pw_block, text="รหัสผ่าน").pack(anchor="w")
-        row = ttk.Frame(pw_block); row.pack(fill="x")
-        self.pwd_entry = ttk.Entry(row, show="*", textvariable=self.pwd_var)
-        self.pwd_entry.pack(side="left", fill="x", expand=True)
+        # Email
+        ttk.Label(frm, text="อีเมล", style='TLabel').pack(anchor="w", pady=(8,2))
+        self.email_entry = ttk.Entry(frm, font=('Segoe UI', 11))
+        self.email_entry.pack(fill="x", ipady=4, pady=(0, 6))
+
+        # Password block
+        self.pwd_var = tk.StringVar()
+        self.cpwd_var = tk.StringVar()
+        pw_block = ttk.LabelFrame(frm, text="รหัสผ่าน", padding=10, style='TFrame')
+        pw_block.pack(fill="x", pady=(0, 8))
+        row = ttk.Frame(pw_block, style='TFrame')
+        row.pack(fill="x")
+        self.pwd_entry = ttk.Entry(row, show="*", textvariable=self.pwd_var, font=('Segoe UI', 11))
+        self.pwd_entry.pack(side="left", fill="x", expand=True, ipady=4)
         self.show_pw_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(row, text="แสดง", variable=self.show_pw_var, command=self._toggle_password_visibility).pack(side="left", padx=8)
-        self.cpw_frame = ttk.Frame(pw_block)
-        ttk.Label(self.cpw_frame, text="ยืนยันรหัสผ่าน").pack(anchor="w", pady=(8,2))
-        self.cpwd_entry = ttk.Entry(self.cpw_frame, show="*", textvariable=self.cpwd_var)
-        self.cpwd_entry.pack(fill="x")
+        self.cpw_frame = ttk.Frame(pw_block, style='TFrame')
+        ttk.Label(self.cpw_frame, text="ยืนยันรหัสผ่าน", style='TLabel').pack(anchor="w", pady=(8,2))
+        self.cpwd_entry = ttk.Entry(self.cpw_frame, show="*", textvariable=self.cpwd_var, font=('Segoe UI', 11))
+        self.cpwd_entry.pack(fill="x", ipady=4)
+
+        # Action button
         self.action_button = ttk.Button(frm, text="เข้าสู่ระบบ", command=self.attempt_auth)
-        self.action_button.pack(pady=16)
-        self.status_label = ttk.Label(frm, text="", foreground="#666"); self.status_label.pack()
+        self.action_button.pack(pady=18, fill="x", ipady=6)
+
+        # Status
+        self.status_label = ttk.Label(frm, text="", foreground="#666", font=('Segoe UI', 10))
+        self.status_label.pack(pady=(4,0))
 
         for w in (self.email_entry, self.pwd_entry, self.cpwd_entry):
             w.bind("<Return>", lambda *_: self.attempt_auth())
@@ -69,25 +90,35 @@ class LoginFrame(ttk.Frame):
 
     def attempt_auth(self):
         """พยายาม Login หรือ Sign up"""
-        email = self.email_entry.get().strip(); pwd = self.pwd_var.get().strip()
+        email = self.email_entry.get().strip()
+        pwd = self.pwd_var.get().strip()
         if not email or not pwd:
-            messagebox.showwarning("ข้อมูลไม่ครบ", "กรุณากรอกอีเมลและรหัสผ่าน"); return
+            messagebox.showwarning("ข้อมูลไม่ครบ", "กรุณากรอกอีเมลและรหัสผ่าน")
+            return
         if not self.has_account.get():
             cpwd = self.cpwd_var.get().strip()
-            if len(pwd) < 6: messagebox.showwarning("รหัสผ่านสั้นไป", "รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร"); return
-            if pwd != cpwd: messagebox.showwarning("รหัสผ่านไม่ตรงกัน", "รหัสผ่านและยืนยันรหัสผ่านไม่ตรงกัน"); return
+            if len(pwd) < 6:
+                messagebox.showwarning("รหัสผ่านสั้นไป", "รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร")
+                return
+            if pwd != cpwd:
+                messagebox.showwarning("รหัสผ่านไม่ตรงกัน", "รหัสผ่านและยืนยันรหัสผ่านไม่ตรงกัน")
+                return
         
         api_key = self.winfo_toplevel().FIREBASE_API_KEY
         rtdb_url = self.winfo_toplevel().FIREBASE_RTDB_URL
         if not api_key or not rtdb_url:
-            messagebox.showerror("Config Error", "กรุณาตั้งค่า Firebase API Key และ RTDB URL ในไฟล์ main.py"); return
+            messagebox.showerror("Config Error", "กรุณาตั้งค่า Firebase API Key และ RTDB URL ในไฟล์ main.py")
+            return
         
         fb = FirebaseRTClient(api_key, rtdb_url)
         try:
-            self.status_label.config(text="กำลังเชื่อมต่อ..."); self.update_idletasks()
+            self.status_label.config(text="กำลังเชื่อมต่อ...")
+            self.update_idletasks()
             fb.sign_in_email(email, pwd) if self.has_account.get() else fb.sign_up_email(email, pwd)
         except Exception as e:
-            messagebox.showerror("เกิดข้อผิดพลาด", f"{e}"); self.status_label.config(text=""); return
+            messagebox.showerror("เกิดข้อผิดพลาด", f"{e}")
+            self.status_label.config(text="")
+            return
         fb.start_auto_refresh()
 
         prof = fb.get_profile(fb.local_uid)
@@ -97,7 +128,9 @@ class LoginFrame(ttk.Frame):
                 if not uname: return
                 dname = simpledialog.askstring("ชื่อที่แสดง", "ชื่อที่จะให้แสดงในแอป (ถ้าว่างจะใช้ Username แทน)", parent=self) or uname
                 try:
-                    fb.reserve_username(uname); fb.save_profile(uname, dname); break
+                    fb.reserve_username(uname)
+                    fb.save_profile(uname, dname)
+                    break
                 except Exception as e:
                     messagebox.showerror("Username ไม่พร้อมใช้งาน", f"ไม่สามารถใช้ Username นี้ได้: {e}\nกรุณาลองใหม่อีกครั้ง")
 
