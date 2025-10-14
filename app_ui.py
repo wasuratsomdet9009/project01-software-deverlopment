@@ -22,7 +22,7 @@ class LoginFrame(ttk.Frame):
         master.geometry("420x340")
         master.columnconfigure(0, weight=1)
         master.rowconfigure(0, weight=1)
-        master.configure(bg="#ffe6f0")  # สีพื้นหลังชมพูอ่อน
+        master.configure(bg="#fedae9")  # สีพื้นหลังชมพูอ่อน
 
         style = ttk.Style()
         style.theme_use('clam')
