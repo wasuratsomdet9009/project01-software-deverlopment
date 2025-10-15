@@ -1,3 +1,4 @@
+
 # app_ui.py
 # ส่วนของหน้าตาโปรแกรม (Frontend) ทั้งหมด
 
@@ -19,7 +20,7 @@ class LoginFrame(ttk.Frame):
         self.on_success = on_success
         self.grid(sticky="nsew", padx=24, pady=24)
         master.title("เข้าสู่ระบบ • Bill Split App")
-        master.geometry("420x500")
+        master.geometry("420x550")
         master.columnconfigure(0, weight=1)
         master.rowconfigure(0, weight=1)
 
@@ -35,7 +36,7 @@ class LoginFrame(ttk.Frame):
         frm.pack(expand=True, fill="both")
 
         # Logo/Title
-        logo = ttk.Label(frm, text="👨‍👩‍👧‍👦", font=("Segoe UI Emoji", 32), style='Title.TLabel')
+        logo = ttk.Label(frm, text="🫂", font=("Segoe UI Emoji", 32), style='Title.TLabel')
         logo.pack(pady=(0, 2))
         ttk.Label(frm, text="เข้าสู่ระบบ", style='Title.TLabel').pack(pady=(0, 12))
 
@@ -146,20 +147,20 @@ class BillSplitApp(ttk.Frame):
         self.name_cache: Dict[str, str] = {}; self.label2uid: Dict[str, str] = {}
         self.small_wins_data: Optional[Dict] = None
 
-        master.title("หารค่าอาหาร & เป้าหมายเล็กๆ • Tkinter + Firebase"); master.geometry("1120x700")
+        master.title("หารค่าอาหาร & เป้าหมายเล็กๆ • Tkinter + Firebase"); master.geometry("1200x750")
         self.pack(fill=tk.BOTH, expand=True)
 
         default_font = font.nametofont("TkDefaultFont")
         self.completed_font = font.Font(family=default_font.cget("family"), size=default_font.cget("size"), overstrike=True)
         self._build_layout()
-        self.after(200, self.open_room_picker)
+        self.after(100, self.open_room_picker)
 
     def _build_layout(self):
         """สร้าง Layout หลักของโปรแกรม"""
         top_bar = ttk.Frame(self); top_bar.pack(fill="x", padx=10, pady=(10, 5))
         ttk.Label(top_bar, text="สถานะ:", font=("Segoe UI", 10)).pack(side="left")
         self.status_label = ttk.Label(top_bar, text="ยังไม่ได้เลือกห้อง", font=("Segoe UI", 10, "bold"))
-        self.status_label.pack(side="left", padx=(4, 12))
+        self.status_label.pack(side="left", padx=(6, 12))
         ttk.Button(top_bar, text="เลือก/สร้างห้อง", command=self.open_room_picker).pack(side="left")
         ttk.Button(top_bar, text="เชิญเพื่อนเข้าห้อง", command=self.invite_member).pack(side="left", padx=4)
         ttk.Button(top_bar, text="คัดลอกรหัสห้อง", command=self.copy_room_id).pack(side="left")
@@ -635,4 +636,3 @@ class BillSplitApp(ttk.Frame):
         path = f"small_wins/{self.room_id}/{goal_id}"
         payload = {"isCompleted": True, "completedAt": int(time.time())}
         self._push_sw_and_rerender('patch', path, payload)
-
