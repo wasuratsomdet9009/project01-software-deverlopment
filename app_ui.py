@@ -20,7 +20,7 @@ class LoginFrame(ttk.Frame):
         self.on_success = on_success
         self.grid(sticky="nsew", padx=24, pady=24)
         master.title("เข้าสู่ระบบ • Bill Split App")
-        master.geometry("420x500")
+        master.geometry("420x550")
         master.columnconfigure(0, weight=1)
         master.rowconfigure(0, weight=1)
 
